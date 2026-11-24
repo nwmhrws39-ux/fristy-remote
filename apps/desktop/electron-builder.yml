@@ -21,6 +21,7 @@ extraResources:
   - from: ../../README.md
     to: docs/README.md
 asar: true
+publish: null
 npmRebuild: false
 win:
   target:

@@ -2,7 +2,7 @@
   "name": "fristy-remote",
   "version": "0.1.0",
   "private": true,
-  "description": "FRISTY Remote – secure remote control for Windows PCs from Android and iOS.",
+  "description": "FRISTY Remote \u2013 secure remote control for Windows PCs from Android and iOS.",
   "license": "UNLICENSED",
   "workspaces": [
     "packages/*",
@@ -16,12 +16,16 @@
     "desktop:build": "npm run build -w @fristy/desktop",
     "desktop:dist": "npm run dist -w @fristy/desktop",
     "mobile:start": "npm run start -w @fristy/mobile",
-    "relay:start": "npm run start -w @fristy/relay-server"
+    "relay:start": "npm run start -w @fristy/relay-server",
+    "test:e2e": "npm run build -w @fristy/desktop && node tests/e2e/electron-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "typescript": "~5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "playwright": "1.63.0",
+    "esbuild": "^0.25.0",
+    "ws": "^8.18.0"
   },
   "engines": {
     "node": ">=22"

@@ -43,7 +43,7 @@ export function Logs() {
         <div className="divide-y divide-line font-mono text-xs">
           {logs.data?.map((l) => (
             <div key={l.id} className="flex items-start gap-3 py-2">
-              <span className="w-40 shrink-0 text-faint">{new Date(l.ts).toLocaleString()}</span>
+              <span className="w-44 shrink-0 whitespace-nowrap text-faint">{new Date(l.ts).toLocaleString()}</span>
               <Badge tone={l.level === 'security' ? 'bad' : l.level === 'warn' ? 'warn' : 'neutral'}>{l.category}</Badge>
               <span className="flex-1 text-fg" dir="auto">
                 {l.message}

@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck, unit + integration tests, Electron E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Electron end-to-end smoke test
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          npm run build -w @fristy/desktop
+          xvfb-run -a node tests/e2e/electron-smoke.mjs
+      - name: Bundle mobile app (Metro, Android + iOS)
+        working-directory: apps/mobile
+        run: |
+          npx expo export --platform android --output-dir /tmp/mobile-android
+          npx expo export --platform ios --output-dir /tmp/mobile-ios
+
+  windows-installer:
+    name: Windows installer (NSIS .exe)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build installer
+        run: npm run dist -w @fristy/desktop
+        env:
+          # Optional code signing (recommended to avoid SmartScreen warnings):
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FRISTY-Remote-Setup
+          path: apps/desktop/release/FRISTY-Remote-Setup-*.exe
+          if-no-files-found: error
+
+  relay-image:
+    name: Relay server Docker image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f apps/relay-server/Dockerfile -t fristy-relay:ci .

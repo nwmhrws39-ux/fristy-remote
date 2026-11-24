@@ -67,7 +67,7 @@ export interface ServerDeps {
   identity: KeyPair;
   pairing: PairingManager;
   handlers: Handlers;
-  host: () => Omit<HostInfo, 'inputEnabled' | 'protocolVersion'>;
+  host: () => Omit<HostInfo, 'inputEnabled' | 'protocolVersion' | 'relayUrl'>;
   now?: () => number;
 }
 
@@ -486,7 +486,13 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
   }
 
   hostInfo(): HostInfo {
-    return { ...this.deps.host(), protocolVersion: PROTOCOL_VERSION, inputEnabled: this.deps.settings.get().inputEnabled };
+    const s = this.deps.settings.get();
+    return {
+      ...this.deps.host(),
+      protocolVersion: PROTOCOL_VERSION,
+      inputEnabled: s.inputEnabled,
+      relayUrl: s.relayEnabled && s.relayUrl ? s.relayUrl : null
+    };
   }
 
   /* ------------------------------------------------------------------ */

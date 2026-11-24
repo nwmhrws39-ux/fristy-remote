@@ -146,6 +146,15 @@ describe('authentication', () => {
     await expect(authClient(core, identity, { connectTimeoutMs: 1500 }).connect()).rejects.toBeInstanceOf(RemoteError);
   });
 
+  it('tells the phone when remote access is turned off instead of failing silently', async () => {
+    const { identity, client } = await paired();
+    client.close();
+    // keep listening but refuse sessions (e.g. relay disabled / owner switched off mid-session)
+    const orig = core.settings.get();
+    (core.settings as unknown as { cache: typeof orig }).cache = { ...orig, remoteEnabled: false };
+    await expectError(authClient(core, identity).connect(), 'remote_disabled');
+  });
+
   it('drops connections that send garbage instead of a handshake', async () => {
     const ws = new WebSocket(url(core));
     await new Promise((r) => ws.once('open', r));

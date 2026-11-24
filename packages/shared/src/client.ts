@@ -1,6 +1,7 @@
 import {
   InboundToClientSchema,
   PairPendingSchema,
+  PlainErrorFrameSchema,
   RelayToClientControlSchema,
   SessionAcceptedSchema,
   SessionRejectedSchema,
@@ -126,6 +127,11 @@ export class RemoteClient {
             return;
           }
           if (stage === 'hello') {
+            const plain = PlainErrorFrameSchema.safeParse(safeJson(raw));
+            if (plain.success) {
+              const code = plain.data.code === 'rate_limited' || plain.data.code === 'remote_disabled' ? plain.data.code : 'protocol';
+              return fail(new RemoteError(code, plain.data.message));
+            }
             this.session = hs.finish(raw);
             stage = 'open';
             const kind = 'pairingId' in o.open ? 'pair' : 'auth';
@@ -240,4 +246,12 @@ export class RemoteClient {
 
 export function decodeServerKey(b64: string): Uint8Array {
   return decodeBase64(b64);
+}
+
+function safeJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }

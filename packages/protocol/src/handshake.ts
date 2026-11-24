@@ -78,7 +78,9 @@ export const HostInfoSchema = z.object({
   computerName: z.string(),
   appVersion: z.string(),
   protocolVersion: z.number().int(),
-  inputEnabled: z.boolean()
+  inputEnabled: z.boolean(),
+  /** relay URL the phone may use when it is not on the same network (null = LAN only) */
+  relayUrl: z.string().max(512).nullable()
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 

@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "FRISTY Remote",
+    "slug": "fristy-remote",
+    "scheme": "fristy",
+    "version": "0.1.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#07070B",
+    "splash": { "image": "./assets/splash-icon.png", "resizeMode": "contain", "backgroundColor": "#07070B" },
+    "ios": {
+      "bundleIdentifier": "com.fristy.remote",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "FRISTY Remote uses the camera only to scan the pairing QR code shown on your PC.",
+        "NSLocalNetworkUsageDescription": "FRISTY Remote connects to your PC on the local network.",
+        "NSPhotoLibraryUsageDescription": "Choose photos and videos to send to your PC.",
+        "NSPhotoLibraryAddUsageDescription": "Save photos and videos received from your PC.",
+        "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true },
+        "ITSAppUsesNonExemptEncryption": true
+      }
+    },
+    "android": {
+      "package": "com.fristy.remote",
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#07070B" },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.CHANGE_WIFI_MULTICAST_STATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE"
+      ],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO", "android.permission.ACCESS_FINE_LOCATION"]
+    },
+    "plugins": [
+      ["expo-camera", { "cameraPermission": "FRISTY Remote uses the camera only to scan the pairing QR code shown on your PC.", "recordAudioAndroid": false }],
+      "expo-secure-store",
+      ["expo-notifications", { "color": "#9B6BFF" }],
+      ["expo-media-library", { "photosPermission": "Save photos and videos received from your PC.", "savePhotosPermission": "Save photos and videos received from your PC.", "isAccessMediaLocationEnabled": false }],
+      ["expo-image-picker", { "photosPermission": "Choose photos and videos to send to your PC.", "cameraPermission": false, "microphonePermission": false }],
+      ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]
+    ],
+    "extra": { "eas": { "projectId": "" } }
+  }
+}

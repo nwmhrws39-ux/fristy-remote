@@ -1,0 +1,12 @@
+FRISTY Remote
+
+By installing this software you agree that:
+
+1. FRISTY Remote lets devices that YOU explicitly pair and approve control this
+   computer. Only pair devices you own and trust.
+2. Remote mouse/keyboard and file sharing are off by default and must be
+   enabled by you. Press Ctrl+Alt+Shift+F12 at any time to stop remote input.
+3. FRISTY Remote never collects passwords or keystroke history and contains no
+   hidden remote access.
+
+The software is provided "as is", without warranty of any kind.

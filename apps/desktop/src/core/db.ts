@@ -131,8 +131,8 @@ export class Store {
   ) {}
 
   /** Opens (or creates) the database. `file = null` gives an in-memory database (tests). */
-  static async open(file: string | null): Promise<Store> {
-    const SQL = await initSqlJs();
+  static async open(file: string | null, wasmPath?: string): Promise<Store> {
+    const SQL = await initSqlJs(wasmPath ? { locateFile: () => wasmPath } : undefined);
     const data = file && fs.existsSync(file) ? fs.readFileSync(file) : undefined;
     const store = new Store(new SQL.Database(data), file);
     store.migrate();

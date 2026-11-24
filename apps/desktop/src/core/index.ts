@@ -30,6 +30,8 @@ export interface CoreOptions {
   launcherToken?: () => string | null;
   /** disable UDP discovery (tests) */
   discovery?: boolean;
+  /** location of sql-wasm.wasm when bundled */
+  sqlWasmPath?: string;
 }
 
 export interface PairingView {
@@ -150,7 +152,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   }
 
   static async create(opts: CoreOptions): Promise<FristyCore> {
-    const store = await Store.open(opts.dataDir ? path.join(opts.dataDir, 'fristy-remote.db') : null);
+    const store = await Store.open(opts.dataDir ? path.join(opts.dataDir, 'fristy-remote.db') : null, opts.sqlWasmPath);
     return new FristyCore(store, opts);
   }
 
@@ -272,6 +274,10 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   }
 
   /* ---------------- stats & alerts ---------------- */
+
+  systemInfo() {
+    return this.opts.platform.info();
+  }
 
   async stats(): Promise<SystemStats> {
     const base = await this.opts.platform.stats();

@@ -1,0 +1,46 @@
+appId: com.fristy.remote
+productName: FRISTY Remote
+copyright: Copyright © FRISTY
+directories:
+  output: release
+  buildResources: build
+# Main, preload and renderer are fully bundled – no node_modules are shipped.
+files:
+  - dist/**/*
+  - package.json
+extraResources:
+  - from: resources/fristy-helper.ps1
+    to: fristy-helper.ps1
+  - from: resources/tray.ico
+    to: tray.ico
+  - from: resources/icon.png
+    to: icon.png
+  - from: ../../docs
+    to: docs
+    filter: ['**/*.md']
+  - from: ../../README.md
+    to: docs/README.md
+asar: true
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  # Runs as the logged-in user (standard permissions). No UAC prompt at runtime.
+  requestedExecutionLevel: asInvoker
+  artifactName: FRISTY-Remote-Setup-${version}.${ext}
+  # Code signing: set CSC_LINK / CSC_KEY_PASSWORD (or WIN_CSC_LINK) in CI. Unsigned builds trigger SmartScreen.
+nsis:
+  oneClick: false
+  perMachine: true
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: FRISTY Remote
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  license: build/license.txt
+  include: build/installer.nsh
+  deleteAppDataOnUninstall: false

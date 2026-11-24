@@ -15,17 +15,9 @@
     "dist:dir": "npm run build && electron-builder --win --x64 --dir",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": {
+  "devDependencies": {
     "@fristy/protocol": "0.1.0",
     "@fristy/shared": "0.1.0",
-    "qrcode": "^1.5.4",
-    "sql.js": "^1.13.0",
-    "systeminformation": "^5.27.0",
-    "tweetnacl": "^1.0.3",
-    "ws": "^8.18.0",
-    "zod": "^4.1.0"
-  },
-  "devDependencies": {
     "@fristy/ui": "0.1.0",
     "@tailwindcss/vite": "^4.1.0",
     "@types/qrcode": "^1.5.5",
@@ -39,9 +31,16 @@
     "electron-builder": "^26.0.0",
     "esbuild": "^0.25.0",
     "lucide-react": "^0.548.0",
+    "qrcode": "^1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "sql.js": "^1.13.0",
+    "systeminformation": "^5.27.0",
     "tailwindcss": "^4.1.0",
-    "vite": "^7.1.0"
-  }
+    "tweetnacl": "^1.0.3",
+    "vite": "^7.1.0",
+    "ws": "^8.18.0",
+    "zod": "^4.1.0"
+  },
+  "dependencies": {}
 }

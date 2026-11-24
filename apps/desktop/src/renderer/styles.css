@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@import "@fristy/ui/theme.css";
+
+@theme inline {
+  --color-bg: var(--fr-bg);
+  --color-elevated: var(--fr-bg-elevated);
+  --color-card: var(--fr-card);
+  --color-line: var(--fr-card-border);
+  --color-fg: var(--fr-text);
+  --color-muted: var(--fr-text-muted);
+  --color-faint: var(--fr-text-faint);
+  --color-accent: var(--fr-accent);
+  --color-accent-strong: var(--fr-accent-strong);
+  --color-ok: var(--fr-success);
+  --color-warn: var(--fr-warning);
+  --color-bad: var(--fr-danger);
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, "Noto Sans Hebrew", sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--fr-bg);
+  color: var(--fr-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+input, textarea, select { user-select: text; }
+.drag { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+
+.glow { box-shadow: 0 0 0 1px color-mix(in srgb, var(--fr-accent) 35%, transparent), 0 10px 40px -12px color-mix(in srgb, var(--fr-accent) 55%, transparent); }
+.brand-gradient { background: linear-gradient(135deg, var(--fr-accent) 0%, var(--fr-accent-strong) 55%, #2b1a66 100%); }
+.fade-in { animation: fade-in .25s ease-out both; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--fr-card-border); border-radius: 10px; border: 2px solid var(--fr-bg); }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

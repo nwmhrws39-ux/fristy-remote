@@ -44,6 +44,7 @@ export const he: Record<StringKey, string> = {
   'pair.manual': 'הזנת קוד צימוד',
   'pair.codeHint': 'מוצג ב-FRISTY Remote במחשב',
   'pair.newCode': 'יצירת קוד צימוד',
+  'pair.refresh': 'קוד חדש',
   'pair.expiresIn': 'פג תוקף בעוד {s} שניות',
   'pair.waiting': 'אשר במחשב',
   'pair.verify': 'ודא ששני המסכים מציגים את הקוד:',

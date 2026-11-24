@@ -42,6 +42,7 @@ export const en = {
   'pair.manual': 'Enter pairing code',
   'pair.codeHint': 'Shown in FRISTY Remote on your PC',
   'pair.newCode': 'Generate pairing code',
+  'pair.refresh': 'New code',
   'pair.expiresIn': 'Expires in {s}s',
   'pair.waiting': 'Confirm on your PC',
   'pair.verify': 'Check that both screens show this code:',

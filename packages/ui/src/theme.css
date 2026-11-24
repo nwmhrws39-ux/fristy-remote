@@ -1,0 +1,33 @@
+/* FRISTY theme variables for the desktop (Tailwind v4 consumes them via @theme in the app). */
+:root {
+  --fr-bg: #07070b;
+  --fr-bg-elevated: #0e0e15;
+  --fr-card: #14141d;
+  --fr-card-border: #24243a;
+  --fr-text: #f4f2ff;
+  --fr-text-muted: #a9a6c2;
+  --fr-text-faint: #6d6a85;
+  --fr-success: #3edc8f;
+  --fr-warning: #ffb547;
+  --fr-danger: #ff5470;
+  --fr-accent: #9b6bff;
+  --fr-accent-strong: #7c4dff;
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  --fr-bg: #f5f4fa;
+  --fr-bg-elevated: #ffffff;
+  --fr-card: #ffffff;
+  --fr-card-border: #e3e1ef;
+  --fr-text: #14121f;
+  --fr-text-muted: #5c5970;
+  --fr-text-faint: #8e8ba3;
+  --fr-success: #169c5f;
+  --fr-warning: #b86e00;
+  --fr-danger: #d42a47;
+  color-scheme: light;
+}
+:root[data-accent='violet'] { --fr-accent: #bb5bff; --fr-accent-strong: #a23bf0; }
+:root[data-accent='blue'] { --fr-accent: #5b8cff; --fr-accent-strong: #3b6bf0; }
+:root[data-accent='pink'] { --fr-accent: #ff5bb8; --fr-accent-strong: #e83e9c; }
+:root[data-accent='green'] { --fr-accent: #3edc8f; --fr-accent-strong: #22b872; }

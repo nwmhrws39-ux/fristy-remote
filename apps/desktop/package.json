@@ -1,0 +1,47 @@
+{
+  "name": "@fristy/desktop",
+  "productName": "FRISTY Remote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FRISTY Remote desktop app for Windows 10/11",
+  "author": "FRISTY",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "node scripts/build-main.mjs && concurrently -k \"vite\" \"node scripts/dev-electron.mjs\"",
+    "build:main": "node scripts/build-main.mjs --production",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "dist": "npm run build && electron-builder --win --x64",
+    "dist:dir": "npm run build && electron-builder --win --x64 --dir",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@fristy/protocol": "0.1.0",
+    "@fristy/shared": "0.1.0",
+    "qrcode": "^1.5.4",
+    "sql.js": "^1.13.0",
+    "systeminformation": "^5.27.0",
+    "tweetnacl": "^1.0.3",
+    "ws": "^8.18.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@fristy/ui": "0.1.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/sql.js": "^1.4.9",
+    "@types/ws": "^8.18.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.0",
+    "electron": "^45.5.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0",
+    "lucide-react": "^0.548.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwindcss": "^4.1.0",
+    "vite": "^7.1.0"
+  }
+}

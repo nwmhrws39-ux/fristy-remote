@@ -1,0 +1,29 @@
+{
+  "name": "fristy-remote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FRISTY Remote – secure remote control for Windows PCs from Android and iOS.",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "desktop:dev": "npm run dev -w @fristy/desktop",
+    "desktop:build": "npm run build -w @fristy/desktop",
+    "desktop:dist": "npm run dist -w @fristy/desktop",
+    "mobile:start": "npm run start -w @fristy/mobile",
+    "relay:start": "npm run start -w @fristy/relay-server"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

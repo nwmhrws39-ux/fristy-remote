@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+release/
+.expo/
+android/
+ios/
+*.log
+.DS_Store
+coverage/
+*.tsbuildinfo
+.env

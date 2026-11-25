@@ -1,4 +1,5 @@
 import { AppState, Platform } from 'react-native';
+import * as Network from 'expo-network';
 import {
   DEFAULT_CONTROL_PORT,
   type MethodName,
@@ -45,14 +46,59 @@ export class ConnectionManager {
   private attempt = 0;
   private wanted = false;
   private wasOnline = false;
+  /** bumped on every connection attempt; stale attempts abort themselves */
+  private gen = 0;
+  private pingFailures = 0;
+  private lastNetwork: string | null = null;
   onAlert: AlertHandler = () => undefined;
 
   state: ConnState = { status: 'idle', host: null, accepted: null, route: null, error: null, latency: null, stats: [], powerSchedule: null };
 
   constructor() {
+    // Coming back to the app: verify a connection that looks alive, or reconnect right away.
     AppState.addEventListener('change', (s) => {
-      if (s === 'active' && this.wanted && this.state.status !== 'online' && this.state.status !== 'connecting') this.reconnectNow();
+      if (s !== 'active' || !this.wanted) return;
+      if (this.state.status === 'online') void this.verify();
+      else this.reconnectNow();
     });
+    // Wi-Fi ↔ mobile data switches leave the old socket hanging: reconnect on the new network.
+    try {
+      Network.addNetworkStateListener((n) => {
+        const key = `${n.type}:${n.isConnected}`;
+        if (key === this.lastNetwork) return;
+        const first = this.lastNetwork === null;
+        this.lastNetwork = key;
+        if (first || !this.wanted || !n.isConnected) return;
+        if (this.state.status === 'online') this.dropAndReconnect('network changed');
+        else this.reconnectNow();
+      });
+    } catch {
+      /* listener unavailable (e.g. tests) */
+    }
+  }
+
+  /** Pings with a short timeout; a dead connection is dropped and re-established. */
+  private async verify(timeoutMs = 3000) {
+    const c = this.client;
+    if (!c) return;
+    try {
+      const t = Date.now();
+      await c.call('session.ping', { t }, timeoutMs);
+      this.pingFailures = 0;
+      this.set({ latency: Date.now() - t });
+    } catch {
+      if (this.client === c) this.dropAndReconnect('connection lost');
+    }
+  }
+
+  private dropAndReconnect(reason: string) {
+    const c = this.client;
+    this.client = null; // detach first so its onClose does not schedule a second retry
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    c?.close();
+    this.attempt = 0;
+    this.set({ status: 'reconnecting', error: reason, latency: null });
+    void this.tryConnect();
   }
 
   subscribe = (cb: () => void) => {
@@ -93,27 +139,54 @@ export class ConnectionManager {
 
   reconnectNow() {
     if (!this.state.host) return;
+    if (this.state.status === 'online' && this.client) return void this.verify();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.wanted = true;
     this.attempt = 0;
     void this.tryConnect();
   }
 
-  private candidates(h: PairedHost): { url: string; relay: boolean; address: string | null }[] {
-    const addrs = [...new Set([h.lastAddress, ...h.hosts].filter(Boolean) as string[])];
-    const list: { url: string; relay: boolean; address: string | null }[] = addrs.map((a) => ({ url: `ws://${a}:${h.port}/fristy`, relay: false, address: a }));
-    if (h.relayUrl) list.push({ url: h.relayUrl, relay: true, address: null });
-    return list;
+  /**
+   * Order of addresses to try. On Wi-Fi: last working address, home LAN, then
+   * Tailscale. On mobile data the home LAN is unreachable, so Tailscale/relay go first.
+   */
+  private async candidates(h: PairedHost): Promise<{ url: string; relay: boolean; address: string | null; timeout: number }[]> {
+    let onWifi = true;
+    try {
+      const n = await Network.getNetworkStateAsync();
+      onWifi = n.type === Network.NetworkStateType.WIFI || n.type === Network.NetworkStateType.ETHERNET;
+    } catch {
+      /* unknown → assume Wi-Fi */
+    }
+    const all = [...new Set([h.lastAddress, ...h.hosts].filter(Boolean) as string[])];
+    const ts = all.filter(isTailscaleIPv4);
+    const other = all.filter((a) => !isTailscaleIPv4(a));
+    const ordered = onWifi ? [...other.slice(0, 1), ...other.slice(1), ...ts] : [...ts, ...other];
+    // On Wi-Fi, prefer the last address that worked even if it is the Tailscale one.
+    if (onWifi && h.lastAddress && ordered[0] !== h.lastAddress) {
+      ordered.splice(ordered.indexOf(h.lastAddress), 1);
+      ordered.unshift(h.lastAddress);
+    }
+    const list = ordered.map((a) => ({
+      url: `ws://${a}:${h.port}/fristy`,
+      relay: false,
+      address: a as string | null,
+      timeout: isTailscaleIPv4(a) ? 7000 : onWifi ? 3500 : 1500
+    }));
+    const relay = h.relayUrl ? [{ url: h.relayUrl, relay: true, address: null, timeout: 8000 }] : [];
+    return onWifi ? [...list, ...relay] : [...list.filter((x) => x.address && isTailscaleIPv4(x.address)), ...relay, ...list.filter((x) => !(x.address && isTailscaleIPv4(x.address)))];
   }
 
   private async tryConnect() {
     const host = this.state.host;
     if (!host || !this.wanted) return;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    const myGen = ++this.gen;
     this.set({ status: this.wasOnline ? 'reconnecting' : 'connecting' });
     const identity = await getIdentity();
     let lastError = 'computer not reachable';
-    for (const c of this.candidates(host)) {
-      if (!this.wanted) return;
+    for (const c of await this.candidates(host)) {
+      if (!this.wanted || myGen !== this.gen) return;
       const client: RemoteClient = new RemoteClient({
         url: c.url,
         viaRelay: c.relay,
@@ -121,7 +194,7 @@ export class ConnectionManager {
         identity,
         serverPublicKey: decodeBase64(host.pk),
         open: { deviceName: deviceName() },
-        connectTimeoutMs: c.relay ? 8000 : 3500,
+        connectTimeoutMs: c.timeout,
         onEvent: (e, d) => this.onEvent(e, d),
         onClose: (reason) => {
           if (this.client !== client) return;
@@ -135,9 +208,10 @@ export class ConnectionManager {
       });
       try {
         const accepted = await client.connect();
-        if (!this.wanted) return client.close();
+        if (!this.wanted || myGen !== this.gen) return client.close();
         this.client = client;
         this.attempt = 0;
+        this.pingFailures = 0;
         if (!this.wasOnline) this.onAlert({ type: 'startup', message: accepted.host.computerName });
         this.wasOnline = true;
         // Remember every address the PC reports (e.g. a Tailscale IP added after pairing) for use away from home.
@@ -163,7 +237,7 @@ export class ConnectionManager {
         }
       }
     }
-    this.scheduleRetry(lastError);
+    if (myGen === this.gen) this.scheduleRetry(lastError);
   }
 
   private scheduleRetry(reason: string) {
@@ -188,15 +262,22 @@ export class ConnectionManager {
     if (accepted.permissions.includes('power')) {
       void this.call('power.scheduleState', {}).then((s) => this.set({ powerSchedule: s })).catch(() => undefined);
     }
+    // Heartbeat: two missed pings in a row = dead connection → reconnect (possibly via another route).
     const ping = async () => {
+      const c = this.client;
+      if (!c) return;
       try {
-        const ms = await this.client?.latency();
-        if (ms !== undefined) this.set({ latency: ms });
+        const t = Date.now();
+        await c.call('session.ping', { t }, 4000);
+        this.pingFailures = 0;
+        this.set({ latency: Date.now() - t });
       } catch {
-        /* onClose handles reconnection */
+        if (this.client !== c) return;
+        if (++this.pingFailures >= 2) this.dropAndReconnect('connection lost');
       }
     };
     void ping();
+    if (this.pingTimer) clearInterval(this.pingTimer);
     this.pingTimer = setInterval(ping, 5000);
   }
 

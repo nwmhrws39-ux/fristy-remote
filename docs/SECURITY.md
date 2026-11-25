@@ -43,8 +43,10 @@ TLS on a LAN needs either a public certificate (impossible for `192.168.x.x`) or
 self-signed certificate with custom pinning, which React Native's WebSocket does not support.
 Encryption and authentication are therefore done one layer up. That gives the same
 confidentiality, integrity and mutual authentication as pinned TLS, and it lets the relay stay
-blind. For this reason the Android build sets `usesCleartextTraffic` and iOS sets
-`NSAllowsLocalNetworking`. **No plaintext command ever crosses the network.** Internet relay
+blind. For this reason the Android build sets `usesCleartextTraffic` and iOS allows non-TLS
+connections in App Transport Security (needed for LAN **and** VPN addresses such as Tailscale's
+`100.64.0.0/10`, which ATS does not treat as local). The app itself only loads HTTPS content
+besides its own encrypted control channel. **No plaintext command ever crosses the network.** Internet relay
 connections additionally use `wss://`, and the desktop refuses non-TLS relay URLs except
 `localhost`.
 

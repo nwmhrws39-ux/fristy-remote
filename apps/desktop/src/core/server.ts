@@ -80,6 +80,7 @@ interface Session {
   lastActivity: number;
   lastInputAt: number | null;
   inputLogged: boolean;
+  screenLogged: boolean;
   statsSubscribed: boolean;
   limiter: RateLimiter;
 }
@@ -90,6 +91,7 @@ type ServerEventsMap = {
   'sessions-changed': [SessionInfo[]];
   'devices-changed': [];
   'input-activity': [{ deviceName: string }];
+  'screen-activity': [{ deviceName: string }];
   security: [{ message: string; remote: string }];
 };
 
@@ -213,6 +215,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
         lastActivity: this.now(),
         lastInputAt: null,
         inputLogged: false,
+        screenLogged: false,
         statsSubscribed: false,
         limiter: new RateLimiter(400, 200, this.now)
       };
@@ -356,7 +359,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
 
     if (!isMethodName(method)) return fail('unknown_method', 'unknown method');
     const def = METHODS[method];
-    if (!s.limiter.take(s.device.id, method.startsWith('input.') ? 1 : 5)) return fail('rate_limited', 'slow down');
+    if (!s.limiter.take(s.device.id, method.startsWith('input.') ? 1 : method === 'screen.frame' ? 20 : 5)) return fail('rate_limited', 'slow down');
 
     if (!hasPermission(s.device.permissions, def.permission)) {
       this.deps.store.log('security', 'permission', `Denied ${method} (missing "${def.permission}")`, s.device.id, s.transport.remote);
@@ -371,6 +374,14 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
       }
       this.emit('input-activity', { deviceName: s.device.name });
     }
+    if (def.permission === 'screen') {
+      if (!this.deps.settings.get().screenEnabled) return fail('screen_disabled', 'Screen viewing is disabled on the computer');
+      if (!s.screenLogged) {
+        s.screenLogged = true;
+        this.deps.store.log('security', 'screen', `${s.device.name} started viewing the screen`, s.device.id, s.transport.remote);
+      }
+      this.emit('screen-activity', { deviceName: s.device.name });
+    }
     const params = validateParams(method, parsed.data.params);
     if (!params.ok) return fail('bad_request', params.message);
 
@@ -384,7 +395,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
       reply({ kind: 'res', id, ok: true, result: result ?? null });
     } catch (e) {
       const err = e as { code?: string; message?: string };
-      const known: ErrorCode[] = ['bad_request', 'forbidden', 'not_found', 'confirmation_required', 'unsupported', 'limit_exceeded'];
+      const known: ErrorCode[] = ['bad_request', 'forbidden', 'not_found', 'confirmation_required', 'unsupported', 'limit_exceeded', 'screen_disabled'];
       const code = known.includes(err.code as ErrorCode) ? (err.code as ErrorCode) : 'internal';
       fail(code, (err.message ?? 'failed').slice(0, 300));
     }

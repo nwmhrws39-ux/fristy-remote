@@ -1,5 +1,5 @@
 import { ScrollView, Text, View } from 'react-native';
-import { Activity, Cpu, Gamepad2, Gauge, HardDrive, MemoryStick, Network, Timer, Zap } from 'lucide-react-native';
+import { Activity, BatteryCharging, BatteryMedium, Cpu, Gamepad2, Gauge, HardDrive, MemoryStick, Network, Timer, Zap } from 'lucide-react-native';
 import type { SystemStats } from '@fristy/protocol';
 import { formatBytes, formatDuration, formatPercent, formatRate, formatTemp } from '@fristy/shared';
 import { font, radius, spacing } from '@fristy/ui';
@@ -72,6 +72,13 @@ export function DashboardScreen() {
             <Row icon={Timer} label={t('dash.uptime')} value={formatDuration(last?.uptime)} />
             <Row icon={Gamepad2} label={t('dash.game')} value={last?.runningGame?.name ?? '—'} />
             <Row icon={Zap} label="GPU" value={last?.gpuName ?? 'N/A'} />
+            {last?.battery && (
+              <Row
+                icon={last.battery.charging ? BatteryCharging : BatteryMedium}
+                label={t('dash.battery')}
+                value={`${last.battery.percent}%${last.battery.charging ? ` · ${t('dash.charging')}` : ''}`}
+              />
+            )}
           </Card>
           {!last && (
             <View style={{ alignItems: 'center', padding: spacing.lg }}>

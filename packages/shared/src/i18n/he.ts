@@ -144,6 +144,7 @@ export const he: Record<StringKey, string> = {
   'perm.files': 'העברת קבצים',
   'perm.macros': 'מאקרו',
   'perm.screen': 'צפייה במסך',
+  'perm.clipboard': 'לוח הגזירים',
 
   'settings.language': 'שפה',
   'settings.theme': 'ערכת נושא',
@@ -152,6 +153,8 @@ export const he: Record<StringKey, string> = {
   'settings.accent': 'צבע הדגשה',
   'settings.remoteAccess': 'גישה מרחוק (רשת מקומית)',
   'settings.remoteInput': 'אפשר שליטה בעכבר ובמקלדת',
+  'settings.screenView': 'אפשר צפייה במסך',
+  'settings.screenViewHint': 'מכשירים מצומדים עם הרשאת "צפייה במסך" יכולים לראות את המסך. בזמן צפייה מוצג חיווי.',
   'settings.startWithWindows': 'הפעלה עם Windows',
   'settings.port': 'פורט',
   'settings.relay': 'גישה דרך האינטרנט (שרת ממסר)',
@@ -177,5 +180,33 @@ export const he: Record<StringKey, string> = {
 
   'status.inputActive': 'שליטה מרחוק פעילה',
   'status.screenActive': 'שיתוף מסך פעיל',
-  'status.unsupported': 'עדיין לא נתמך'
+  'status.unsupported': 'עדיין לא נתמך',
+
+  'screen.title': 'מסך',
+  'screen.disabled': 'צפייה במסך כבויה במחשב. הפעל "אפשר צפייה במסך" בהגדרות FRISTY Remote.',
+  'screen.quality': 'איכות',
+  'screen.low': 'נמוכה',
+  'screen.medium': 'בינונית',
+  'screen.high': 'גבוהה',
+  'screen.save': 'שמירת צילום מסך',
+  'screen.saved': 'נשמר בתמונות',
+  'screen.tapHint': 'הקשה = קליק · לחיצה ארוכה = קליק ימני · צביטה = זום',
+  'screen.viewOnly': 'צפייה בלבד – נדרשת הרשאת "עכבר ומקלדת" כדי ללחוץ',
+
+  'nav.tools': 'כלים',
+  'tools.clipboard': 'לוח הגזירים',
+  'tools.sendToPc': 'שליחה למחשב',
+  'tools.getFromPc': 'קבלה מהמחשב',
+  'tools.copied': 'הועתק לטלפון',
+  'tools.message': 'הודעה למחשב',
+  'tools.speak': 'הקראה בקול במחשב',
+  'tools.send': 'שליחה',
+  'tools.sent': 'נשלח',
+  'tools.presentation': 'שלט למצגת',
+  'tools.start': 'התחלה',
+  'tools.end': 'סיום',
+  'tools.black': 'מסך שחור',
+  'files.openOnPc': 'פתיחה במחשב',
+  'dash.battery': 'סוללה',
+  'dash.charging': 'בטעינה'
 };

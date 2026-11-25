@@ -4,6 +4,7 @@ import { DEFAULT_GRANTS, decodePairingQr, type Permission } from '@fristy/protoc
 import { RemoteClient, decodeBase64, generateKeyPair, type KeyPair, type SocketLike } from '@fristy/shared';
 import { FristyCore } from '../src/core';
 import type { Platform } from '../src/core/platform/types';
+import type { DesktopBridge } from '../src/core/bridge';
 
 export type Call = [string, ...unknown[]];
 
@@ -23,6 +24,8 @@ export function fakePlatform(): Platform & { calls: Call[] } {
     scheduleShutdown: rec('scheduleShutdown'),
     cancelShutdown: rec('cancelShutdown'),
     mouseMove: rec('mouseMove'),
+    moveCursor: rec('moveCursor'),
+    speak: rec('speak'),
     mouseButton: rec('mouseButton'),
     scroll: rec('scroll'),
     typeText: rec('typeText'),
@@ -85,7 +88,7 @@ export function fakePlatform(): Platform & { calls: Call[] } {
   };
 }
 
-export async function startCore(platform = fakePlatform()) {
+export async function startCore(platform = fakePlatform(), desktop?: DesktopBridge) {
   const identity = generateKeyPair();
   const core = await FristyCore.create({
     dataDir: null,
@@ -94,7 +97,8 @@ export async function startCore(platform = fakePlatform()) {
     identityPersisted: true,
     appVersion: 'test',
     computerName: 'TEST-PC',
-    discovery: false
+    discovery: false,
+    desktop
   });
   core.settings.update({ port: await freePort() });
   await core.start();

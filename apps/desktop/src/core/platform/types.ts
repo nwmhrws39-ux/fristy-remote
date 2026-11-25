@@ -37,6 +37,10 @@ export interface Platform {
   cancelShutdown(): Promise<void>;
 
   mouseMove(dx: number, dy: number): Promise<void>;
+  /** Absolute cursor position in physical screen pixels (virtual desktop coordinates). */
+  moveCursor(x: number, y: number): Promise<void>;
+  /** Reads text aloud on the PC. */
+  speak(text: string): Promise<void>;
   mouseButton(button: 'left' | 'right' | 'middle', action: 'click' | 'double' | 'down' | 'up'): Promise<void>;
   scroll(dx: number, dy: number): Promise<void>;
   typeText(text: string): Promise<void>;

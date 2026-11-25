@@ -106,6 +106,22 @@ try {
   await assert.rejects(client.call('power.action', { action: 'lock' }), (e) => e.code === 'forbidden');
   step('monitor allowed, power denied by permissions');
 
+  // 3b) Screen viewing + clipboard through the real Electron bridge.
+  await win.evaluate((id) => window.fristy.invoke('devices.permissions', { id, permissions: ['monitor', 'screen', 'clipboard'] }), accepted.deviceId);
+  await assert.rejects(client.call('screen.displays', {}), (e) => e.code === 'screen_disabled');
+  await win.evaluate(() => window.fristy.invoke('settings.update', { screenEnabled: true }));
+  const displays = await client.call('screen.displays', {});
+  assert.ok(displays.length >= 1, 'at least one display');
+  const frame = await client.call('screen.frame', { displayId: displays[0].id, maxWidth: 800, quality: 50 });
+  const jpeg = Buffer.from(frame.data, 'base64');
+  assert.equal(jpeg[0], 0xff);
+  assert.equal(jpeg[1], 0xd8, 'frame must be a JPEG');
+  if (shots) fs.writeFileSync(path.join(shots, 'e2e-remote-frame.jpg'), jpeg);
+  step(`screen captured remotely: ${frame.w}×${frame.h} JPEG, ${Math.round(jpeg.length / 1024)} KB`);
+  await client.call('clipboard.set', { text: 'hello from the phone' });
+  assert.equal((await client.call('clipboard.get', {})).text, 'hello from the phone');
+  step('clipboard round-trip through the PC clipboard');
+
   // 4) Owner revokes → immediate disconnect and no reconnection.
   await win.evaluate((id) => window.fristy.invoke('devices.revoke', { id }), accepted.deviceId);
   await assert.rejects(

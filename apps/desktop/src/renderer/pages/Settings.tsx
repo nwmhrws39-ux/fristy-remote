@@ -54,6 +54,7 @@ export function Settings({ state }: { state: CoreState }) {
         <Card title={t('settings.remoteAccess')}>
           <Toggle checked={s.remoteEnabled} onChange={(v) => set({ remoteEnabled: v })} label={t('settings.remoteAccess')} description="When off, the PC accepts no connections at all." />
           <Toggle checked={s.inputEnabled} onChange={(v) => set({ inputEnabled: v })} label={t('settings.remoteInput')} description={t('input.emergency')} />
+          <Toggle checked={s.screenEnabled} onChange={(v) => set({ screenEnabled: v })} label={t('settings.screenView')} description={t('settings.screenViewHint')} />
           <Toggle checked={s.startWithWindows} onChange={(v) => set({ startWithWindows: v })} label={t('settings.startWithWindows')} />
           <Toggle checked={s.startMinimized} onChange={(v) => set({ startMinimized: v })} label="Start minimized to tray" />
           <div className="mt-3 max-w-[200px]">

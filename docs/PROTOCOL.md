@@ -50,7 +50,7 @@ PC replies (encrypted):
 ```
 
 Error codes: `bad_request, unknown_method, forbidden, input_disabled, not_found,
-confirmation_required, rate_limited, unsupported, limit_exceeded, internal`.
+confirmation_required, rate_limited, unsupported, limit_exceeded, internal, screen_disabled`.
 
 ### Methods
 
@@ -83,6 +83,12 @@ confirmation_required, rate_limited, unsupported, limit_exceeded, internal`.
 | `files.uploadStart` → `files.uploadChunk` → `files.finish` | files | `{rootId, dir, name, size}` → `{transferId, index, data}` → `{transferId}` |
 | `files.pause` / `files.cancel` | files | `{transferId, paused}` / `{transferId}` |
 | `macros.list` / `macros.run` | macros | `{}` / `{macroId}` |
+| `screen.displays` | screen | `{}` |
+| `screen.frame` | screen | `{displayId, maxWidth: 320..2560, quality: 20..90}` → `{w, h, data (JPEG b64), ts}` |
+| `input.moveTo` | input | `{displayId, x: 0..1, y: 0..1}` |
+| `clipboard.get` / `clipboard.set` | clipboard | `{}` / `{text}` (≤10 000 chars) |
+| `files.open` | files | `{rootId, path}` (media/documents only) |
+| `system.message` | apps | `{text, speak}` |
 
 All parameter objects are `strict`: unknown keys are rejected.
 

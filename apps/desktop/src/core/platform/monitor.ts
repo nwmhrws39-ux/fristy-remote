@@ -26,6 +26,19 @@ export class HardwareMonitor {
   private disk: Cached<{ free: number | null; total: number | null }> | null = null;
   private gpuPending: Promise<void> | null = null;
   private diskPending: Promise<void> | null = null;
+  private battery: Cached<{ percent: number; charging: boolean } | null> | null = null;
+
+  private async refreshBattery() {
+    try {
+      const b = await si.battery();
+      this.battery = {
+        at: Date.now(),
+        value: b.hasBattery && typeof b.percent === 'number' ? { percent: Math.round(b.percent), charging: !!b.isCharging } : null
+      };
+    } catch {
+      this.battery = { at: Date.now(), value: null };
+    }
+  }
 
   private refreshGpu(): Promise<void> {
     if (this.gpuPending) return this.gpuPending;
@@ -84,6 +97,7 @@ export class HardwareMonitor {
     if (!this.disk) await this.refreshDisk();
     else if (now - this.disk.at > 30_000) void this.refreshDisk();
 
+    if (!this.battery || now - this.battery.at > 30_000) await this.refreshBattery();
     const [load, temp, net] = await Promise.all([
       si.currentLoad().catch(() => null),
       si.cpuTemperature().catch(() => null),
@@ -106,7 +120,8 @@ export class HardwareMonitor {
       diskTotal: this.disk?.value.total ?? null,
       netRx: sum('rx_sec'),
       netTx: sum('tx_sec'),
-      uptime: Math.round(os.uptime())
+      uptime: Math.round(os.uptime()),
+      battery: this.battery?.value ?? null
     };
   }
 

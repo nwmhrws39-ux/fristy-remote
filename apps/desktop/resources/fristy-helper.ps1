@@ -123,6 +123,25 @@ namespace Fristy
         }
     }
 
+    public static class Cursor
+    {
+        [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+        [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+        [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+
+        /// Coordinates from FRISTY are physical pixels, so this process must be DPI aware.
+        public static void InitDpi()
+        {
+            try { if (SetProcessDpiAwarenessContext((IntPtr)(-4))) return; } catch { }
+            try { SetProcessDPIAware(); } catch { }
+        }
+
+        public static void MoveTo(int x, int y)
+        {
+            if (!SetCursorPos(x, y)) throw new Exception("SetCursorPos failed");
+        }
+    }
+
     public static class Power
     {
         [DllImport("user32.dll")] static extern bool LockWorkStation();
@@ -502,6 +521,18 @@ namespace Fristy
 '@
 
 Add-Type -TypeDefinition $source -Language CSharp
+[Fristy.Cursor]::InitDpi()
+
+# Text-to-speech for "message to PC" (System.Speech ships with .NET Framework).
+$script:speech = $null
+function Invoke-Speak([string]$text) {
+    if ($null -eq $script:speech) {
+        Add-Type -AssemblyName System.Speech
+        $script:speech = New-Object System.Speech.Synthesis.SpeechSynthesizer
+    }
+    $script:speech.SpeakAsyncCancelAll()
+    [void]$script:speech.SpeakAsync($text)
+}
 
 [Console]::Out.WriteLine('{"ready":true}')
 [Console]::Out.Flush()
@@ -518,6 +549,8 @@ while ($true) {
         switch ([string]$req.op) {
             'mouseMove'   { [Fristy.Input]::Move([int]$a.dx, [int]$a.dy) }
             'mouseButton' { [Fristy.Input]::Button([string]$a.button, [string]$a.action) }
+            'moveTo'      { [Fristy.Cursor]::MoveTo([int]$a.x, [int]$a.y) }
+            'speak'       { Invoke-Speak ([string]$a.text) }
             'scroll'      { [Fristy.Input]::Scroll([int]$a.dx, [int]$a.dy) }
             'text'        { [Fristy.Input]::Text([string]$a.text) }
             'combo'       { [Fristy.Input]::Combo([int[]]@($a.modifiers), [int]$a.vk) }

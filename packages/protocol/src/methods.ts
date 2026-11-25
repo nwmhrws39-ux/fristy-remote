@@ -21,7 +21,33 @@ export interface SystemStats {
   netTx: number | null; // bytes/sec
   uptime: number | null; // seconds
   runningGame: { id: string; name: string } | null;
+  /** laptop battery; null on desktops / when unknown */
+  battery?: { percent: number; charging: boolean } | null;
 }
+
+export interface DisplayInfo {
+  id: string;
+  name: string;
+  width: number; // physical pixels
+  height: number;
+  primary: boolean;
+}
+
+export interface ScreenFrame {
+  w: number;
+  h: number;
+  /** JPEG, base64 */
+  data: string;
+  ts: number;
+}
+
+/** File types that may be opened on the PC from the phone (never executables or scripts). */
+export const OPENABLE_EXTENSIONS = [
+  'mp4', 'mkv', 'avi', 'mov', 'wmv', 'webm', 'm4v',
+  'mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'wma',
+  'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'heic',
+  'pdf', 'txt', 'md', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'rtf', 'csv'
+] as const;
 
 export interface SystemInfo {
   computerName: string;
@@ -253,7 +279,33 @@ export const METHODS = {
   'files.history': { permission: 'files', params: empty },
 
   'macros.list': { permission: 'macros', params: empty },
-  'macros.run': { permission: 'macros', params: z.object({ macroId: id }).strict() }
+  'macros.run': { permission: 'macros', params: z.object({ macroId: id }).strict() },
+
+  'screen.displays': { permission: 'screen', params: empty },
+  'screen.frame': {
+    permission: 'screen',
+    params: z
+      .object({
+        displayId: z.string().min(1).max(64),
+        maxWidth: z.number().int().min(320).max(2560),
+        quality: z.number().int().min(20).max(90)
+      })
+      .strict()
+  },
+  'input.moveTo': {
+    permission: 'input',
+    params: z.object({ displayId: z.string().min(1).max(64), x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).strict()
+  },
+
+  'clipboard.get': { permission: 'clipboard', params: empty },
+  'clipboard.set': { permission: 'clipboard', params: z.object({ text: z.string().max(10_000) }).strict() },
+
+  'files.open': { permission: 'files', params: z.object({ rootId: id, path: z.string().min(1).max(1024) }).strict() },
+
+  'system.message': {
+    permission: 'apps',
+    params: z.object({ text: z.string().min(1).max(300), speak: z.boolean() }).strict()
+  }
 } as const satisfies Record<string, { permission: Permission | null; params: z.ZodType }>;
 
 export type MethodName = keyof typeof METHODS;
@@ -304,6 +356,13 @@ export interface MethodResults {
   'files.history': TransferRecord[];
   'macros.list': MacroEntry[];
   'macros.run': { steps: number };
+  'screen.displays': DisplayInfo[];
+  'screen.frame': ScreenFrame;
+  'input.moveTo': null;
+  'clipboard.get': { text: string };
+  'clipboard.set': { ok: true };
+  'files.open': { ok: true };
+  'system.message': { ok: true };
 }
 
 /* ------------------------------------------------------------------ */
@@ -323,6 +382,7 @@ export const ERROR_CODES = [
   'unknown_method',
   'forbidden',
   'input_disabled',
+  'screen_disabled',
   'not_found',
   'confirmation_required',
   'rate_limited',

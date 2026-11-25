@@ -52,11 +52,19 @@ connections additionally use `wss://`, and the desktop refuses non-TLS relay URL
 
 - Every RPC method is listed in `packages/protocol/src/methods.ts` with a **Zod schema** and a
   **required permission**. Unknown methods, extra fields and out-of-range values are rejected.
-- Permissions per device: `monitor, power, apps, games, input, audio, files, macros` (`screen`
-  is reserved). The PC owner picks them at approval time and can change them live.
+- Permissions per device: `monitor, power, apps, games, input, audio, files, macros, screen,
+  clipboard`. The PC owner picks them at approval time and can change them live.
 - **Remote input** needs the `input` permission **and** the global "Allow remote mouse &
   keyboard" switch. It is off by default. An always-on-top indicator shows on the PC while
   input is active. **Ctrl+Alt+Shift+F12** disables it immediately.
+- **Screen viewing** needs the `screen` permission **and** the global "Allow screen viewing"
+  switch (off by default). A visible indicator appears on the PC while it is viewed, every
+  start is written to the security log, and **Ctrl+Alt+Shift+F12** turns viewing off together
+  with remote input. Windows itself keeps DRM-protected content and the secure desktop
+  (UAC, lock screen, Ctrl+Alt+Del) out of captures. Tap-to-click additionally needs `input`.
+- **Clipboard** access has its own `clipboard` permission (text only).
+- **Opening files on the PC** is limited to shared folders and a media/document extension
+  allow-list. Executables, scripts and shortcuts are always refused.
 - **Shutdown/restart**, scheduled shutdown, closing games and closing apps require an
   explicit `confirm: true` that the phone only sends after a confirmation dialog.
 - **Apps:** only executables added by the PC owner (file picker on the PC) can be launched,

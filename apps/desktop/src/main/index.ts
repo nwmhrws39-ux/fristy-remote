@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { BrowserWindow, Menu, Notification, Tray, app, globalShortcut, nativeImage, safeStorage, screen, session, shell } from 'electron';
+import { BrowserWindow, Menu, Notification, Tray, app, clipboard, desktopCapturer, globalShortcut, nativeImage, safeStorage, screen, session, shell } from 'electron';
+import type { DesktopBridge } from '../core/bridge';
 import { FristyCore } from '../core';
 import { SecretStore, loadIdentity, type SecretCipher } from '../core/identity';
 import { createUnsupportedPlatform } from '../core/platform/unsupported';
@@ -108,7 +109,7 @@ function send(event: string, data: unknown) {
 
 /* -------------------- remote input indicator -------------------- */
 
-function showIndicator(deviceName: string) {
+function showIndicator(deviceName: string, kind: 'input' | 'screen' = 'input') {
   if (!indicator) {
     indicator = new BrowserWindow({
       width: 300,
@@ -129,13 +130,60 @@ function showIndicator(deviceName: string) {
     const area = screen.getPrimaryDisplay().workArea;
     indicator.setPosition(area.x + area.width - 316, area.y + 16);
   }
-  const q = new URLSearchParams({ device: deviceName.slice(0, 40), lang: core.settings.get().language });
+  const q = new URLSearchParams({ device: deviceName.slice(0, 40), lang: core.settings.get().language, kind });
   const target = DEV_URL ? `${DEV_URL}/indicator.html?${q}` : `file://${rendererFile('indicator.html').replace(/\\/g, '/')}?${q}`;
   if (indicator.webContents.getURL() !== target) void indicator.loadURL(target);
   if (!indicator.isVisible()) indicator.showInactive();
   if (indicatorTimer) clearTimeout(indicatorTimer);
   indicatorTimer = setTimeout(() => indicator?.hide(), 4000);
 }
+
+/* -------------------- desktop bridge (screen, clipboard, shell) -------------------- */
+
+function displayById(id: string) {
+  return screen.getAllDisplays().find((d) => String(d.id) === id);
+}
+
+const desktopBridge: DesktopBridge = {
+  displays() {
+    const primary = screen.getPrimaryDisplay().id;
+    return screen.getAllDisplays().map((d, i) => ({
+      id: String(d.id),
+      name: d.label || `Display ${i + 1}`,
+      width: Math.round(d.size.width * d.scaleFactor),
+      height: Math.round(d.size.height * d.scaleFactor),
+      primary: d.id === primary
+    }));
+  },
+  async grab(displayId, maxWidth, quality) {
+    const d = displayById(displayId);
+    if (!d) throw new Error('display not found');
+    const physW = d.size.width * d.scaleFactor;
+    const physH = d.size.height * d.scaleFactor;
+    const scale = Math.min(1, maxWidth / physW);
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: Math.round(physW * scale), height: Math.round(physH * scale) }
+    });
+    const src = sources.find((s) => s.display_id === displayId) ?? (sources.length === 1 ? sources[0] : undefined);
+    if (!src || src.thumbnail.isEmpty()) throw new Error('screen capture unavailable');
+    const size = src.thumbnail.getSize();
+    return { w: size.width, h: size.height, data: src.thumbnail.toJPEG(quality).toString('base64') };
+  },
+  toScreenPoint(displayId, nx, ny) {
+    const d = displayById(displayId);
+    if (!d) throw new Error('display not found');
+    const dip = { x: Math.round(d.bounds.x + nx * (d.bounds.width - 1)), y: Math.round(d.bounds.y + ny * (d.bounds.height - 1)) };
+    // Windows: convert DIP to physical pixels (correct across mixed-DPI monitors).
+    return process.platform === 'win32' ? screen.dipToScreenPoint(dip) : dip;
+  },
+  clipboardRead: () => clipboard.readText(),
+  clipboardWrite: (text) => clipboard.writeText(text),
+  notify(title, body) {
+    if (Notification.isSupported()) new Notification({ title, body }).show();
+  },
+  openPath: (file) => shell.openPath(file)
+};
 
 /* -------------------- tray -------------------- */
 
@@ -203,6 +251,7 @@ app.whenReady().then(async () => {
     identityPersisted: persisted,
     appVersion: app.getVersion(),
     sqlWasmPath: path.join(__dirname, 'sql-wasm.wasm'),
+    desktop: desktopBridge,
     launcherToken: () => secrets.get('launcher-token'),
     iconFor: async (exe) => {
       try {
@@ -233,6 +282,7 @@ app.whenReady().then(async () => {
     send('input-activity', a);
     showIndicator(a.deviceName);
   });
+  core.on('screen-activity', (a) => showIndicator(a.deviceName, 'screen'));
   core.on('security', (s) => {
     send('security', s);
     if (Notification.isSupported()) new Notification({ title: 'FRISTY Remote – security', body: s.message }).show();
@@ -248,7 +298,7 @@ app.whenReady().then(async () => {
   const registered = globalShortcut.register(EMERGENCY_SHORTCUT, () => {
     core.emergencyStop();
     indicator?.hide();
-    if (Notification.isSupported()) new Notification({ title: 'FRISTY Remote', body: 'Remote input disabled (emergency shortcut).' }).show();
+    if (Notification.isSupported()) new Notification({ title: 'FRISTY Remote', body: 'Remote input and screen viewing disabled (emergency shortcut).' }).show();
   });
   if (!registered) core.store.log('warn', 'input', `Emergency shortcut ${EMERGENCY_SHORTCUT} is in use by another application`);
 

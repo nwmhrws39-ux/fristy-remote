@@ -3,6 +3,7 @@ import type { AudioState, EventName, METHODS, MethodName, MethodResults, ServerE
 import type { Platform, ProcessInfo } from './platform/types';
 import { PlatformError } from './platform/types';
 import type { HandlerContext } from './server';
+import type { DesktopBridge } from './bridge';
 import type { AppService } from './services/apps';
 import type { FileService } from './services/files';
 import type { GameService } from './services/games';
@@ -25,6 +26,8 @@ export interface HandlerDeps {
   macros: MacroService;
   procs: ProcessCache;
   stats(): Promise<SystemStats>;
+  /** Electron-only capabilities; absent in plain Node (tests / headless) → "unsupported" */
+  desktop?: DesktopBridge;
   broadcast<E extends EventName>(event: E, data: ServerEvents[E], permission?: 'power' | 'monitor' | null): void;
 }
 
@@ -42,6 +45,16 @@ export function nowPlayingFrom(procs: ProcessInfo[]): AudioState['nowPlaying'] {
 export function createHandlers(d: HandlerDeps): Handlers {
   let schedule: { action: 'shutdown' | 'restart'; at: number; timer: NodeJS.Timeout } | null = null;
 
+  const bridge = (): DesktopBridge => {
+    if (!d.desktop) throw err('unsupported', 'Not available on this computer');
+    return d.desktop;
+  };
+  const display = (id: string) => {
+    const disp = bridge().displays().find((x) => x.id === id);
+    if (!disp) throw err('not_found', 'display not found');
+    return disp;
+  };
+
   const mediaKey = { playPause: 'mediaPlayPause', next: 'mediaNext', previous: 'mediaPrevious', stop: 'mediaStop' } as const;
 
   const wrapPlatform = async <T>(fn: () => Promise<T>): Promise<T> => {
@@ -53,7 +66,7 @@ export function createHandlers(d: HandlerDeps): Handlers {
     }
   };
 
-  const methods: MethodHandlers = {
+  const methods: Omit<MethodHandlers, 'screen.displays' | 'screen.frame' | 'input.moveTo' | 'clipboard.get' | 'clipboard.set' | 'files.open' | 'system.message'> = {
     'session.ping': async (_c, p) => ({ t: p.t, serverTime: Date.now() }),
     'session.subscribeStats': async (c, p) => {
       c.setStatsSubscription(p.enabled);
@@ -192,7 +205,39 @@ export function createHandlers(d: HandlerDeps): Handlers {
   };
 
   return {
-    methods,
+    methods: {
+      ...methods,
+      'screen.displays': async () => bridge().displays(),
+      'screen.frame': async (_c, p) => {
+        display(p.displayId);
+        let frame = await bridge().grab(p.displayId, p.maxWidth, p.quality);
+        // Keep frames comfortably inside transport limits (relay ≈ 1 MB per message).
+        if (frame.data.length > 700_000) frame = await bridge().grab(p.displayId, Math.min(p.maxWidth, 1280), Math.min(p.quality, 40));
+        return { ...frame, ts: Date.now() };
+      },
+      'input.moveTo': async (_c, p) => {
+        display(p.displayId);
+        const pt = bridge().toScreenPoint(p.displayId, p.x, p.y);
+        await wrapPlatform(() => d.platform.moveCursor(pt.x, pt.y));
+        return null;
+      },
+      'clipboard.get': async () => ({ text: (await bridge().clipboardRead()).slice(0, 10_000) }),
+      'clipboard.set': async (_c, p) => {
+        bridge().clipboardWrite(p.text);
+        return { ok: true };
+      },
+      'files.open': async (_c, p) => {
+        const file = await d.files.resolveForOpen(p.rootId, p.path);
+        const error = await bridge().openPath(file);
+        if (error) throw err('internal', error);
+        return { ok: true };
+      },
+      'system.message': async (c, p) => {
+        bridge().notify(`FRISTY Remote – ${c.deviceName}`, p.text);
+        if (p.speak) await wrapPlatform(() => d.platform.speak(p.text)).catch(() => undefined);
+        return { ok: true };
+      }
+    } as MethodHandlers,
     onDisconnect: (deviceId) => d.files.cancelDevice(deviceId)
   };
 }

@@ -208,6 +208,12 @@ function SessionsCard({ state, go }: { state: CoreState; go: (p: PageId) => void
         label={t('settings.remoteInput')}
         description={t('input.emergency')}
       />
+      <Toggle
+        checked={state.settings.screenEnabled}
+        onChange={(v) => void invoke('settings.update', { screenEnabled: v })}
+        label={t('settings.screenView')}
+        description={t('settings.screenViewHint')}
+      />
       <div className="mt-3 divide-y divide-line">
         {state.sessions.length === 0 && <p className="py-3 text-sm text-muted">{t('devices.none')}</p>}
         {state.sessions.map((s) => (

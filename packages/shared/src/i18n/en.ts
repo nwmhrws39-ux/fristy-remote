@@ -142,6 +142,7 @@ export const en = {
   'perm.files': 'File transfer',
   'perm.macros': 'Macros',
   'perm.screen': 'Screen viewing',
+  'perm.clipboard': 'Clipboard',
 
   'settings.language': 'Language',
   'settings.theme': 'Theme',
@@ -150,6 +151,8 @@ export const en = {
   'settings.accent': 'Accent color',
   'settings.remoteAccess': 'Remote access (LAN)',
   'settings.remoteInput': 'Allow remote mouse & keyboard',
+  'settings.screenView': 'Allow screen viewing',
+  'settings.screenViewHint': 'Paired devices with the Screen permission can see this screen. An indicator shows while it is viewed.',
   'settings.startWithWindows': 'Start with Windows',
   'settings.port': 'Port',
   'settings.relay': 'Internet access via relay',
@@ -175,7 +178,35 @@ export const en = {
 
   'status.inputActive': 'Remote input active',
   'status.screenActive': 'Screen sharing active',
-  'status.unsupported': 'Not supported yet'
+  'status.unsupported': 'Not supported yet',
+
+  'screen.title': 'Screen',
+  'screen.disabled': 'Screen viewing is turned off on the PC. Enable "Allow screen viewing" in FRISTY Remote settings.',
+  'screen.quality': 'Quality',
+  'screen.low': 'Low',
+  'screen.medium': 'Medium',
+  'screen.high': 'High',
+  'screen.save': 'Save screenshot',
+  'screen.saved': 'Saved to Photos',
+  'screen.tapHint': 'Tap = click · long-press = right click · pinch to zoom',
+  'screen.viewOnly': 'View only – grant "Mouse & keyboard" to click',
+
+  'nav.tools': 'Tools',
+  'tools.clipboard': 'Clipboard',
+  'tools.sendToPc': 'Send to PC',
+  'tools.getFromPc': 'Get from PC',
+  'tools.copied': 'Copied to this phone',
+  'tools.message': 'Message to PC',
+  'tools.speak': 'Read aloud on the PC',
+  'tools.send': 'Send',
+  'tools.sent': 'Sent',
+  'tools.presentation': 'Presentation remote',
+  'tools.start': 'Start',
+  'tools.end': 'End',
+  'tools.black': 'Black screen',
+  'files.openOnPc': 'Open on PC',
+  'dash.battery': 'Battery',
+  'dash.charging': 'charging'
 } as const;
 
 export type StringKey = keyof typeof en;

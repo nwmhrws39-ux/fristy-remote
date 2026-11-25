@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { AppWindow, FolderSync, Gamepad2, LayoutDashboard, MousePointer2, Power, Settings, Volume2, Zap, type LucideIcon } from 'lucide-react-native';
+import { AppWindow, FolderSync, Gamepad2, LayoutDashboard, LayoutGrid, Monitor, MousePointer2, Power, Settings, Volume2, Wrench, Zap, type LucideIcon } from 'lucide-react-native';
 import type { StringKey } from '@fristy/shared';
 import { font, radius, spacing } from '@fristy/ui';
 import { AppProvider, useApp } from './src/theme';
@@ -22,18 +22,22 @@ import { AudioScreen } from './src/screens/AudioScreen';
 import { FilesScreen } from './src/screens/FilesScreen';
 import { MacrosScreen } from './src/screens/MacrosScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { ScreenScreen } from './src/screens/ScreenScreen';
+import { ToolsScreen } from './src/screens/ToolsScreen';
 
-type Tab = 'dashboard' | 'games' | 'input' | 'power' | 'more' | 'apps' | 'audio' | 'files' | 'macros' | 'settings';
+type Tab = 'dashboard' | 'games' | 'input' | 'screen' | 'power' | 'more' | 'apps' | 'audio' | 'files' | 'macros' | 'tools' | 'settings';
 
 const MAIN_TABS: { id: Tab; icon: LucideIcon; label: StringKey }[] = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'nav.dashboard' },
   { id: 'games', icon: Gamepad2, label: 'nav.games' },
+  { id: 'screen', icon: Monitor, label: 'screen.title' },
   { id: 'input', icon: MousePointer2, label: 'nav.input' },
-  { id: 'power', icon: Power, label: 'nav.power' },
-  { id: 'more', icon: Zap, label: 'nav.macros' }
+  { id: 'more', icon: LayoutGrid, label: 'nav.macros' }
 ];
 
 const MORE: { id: Tab; icon: LucideIcon; label: StringKey }[] = [
+  { id: 'power', icon: Power, label: 'nav.power' },
+  { id: 'tools', icon: Wrench, label: 'nav.tools' },
   { id: 'macros', icon: Zap, label: 'nav.macros' },
   { id: 'apps', icon: AppWindow, label: 'nav.apps' },
   { id: 'audio', icon: Volume2, label: 'nav.audio' },
@@ -124,6 +128,10 @@ function Main({ onAddComputer, onHostsChanged }: { onAddComputer: () => void; on
         return <TouchpadScreen />;
       case 'power':
         return <PowerScreen />;
+      case 'screen':
+        return <ScreenScreen />;
+      case 'tools':
+        return <ToolsScreen />;
       case 'apps':
         return <AppsScreen />;
       case 'audio':

@@ -4,8 +4,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import { ArrowDownToLine, ArrowUpFromLine, ChevronLeft, File as FileIcon, Folder, Image as ImageIcon, Pause, Play, Share2, X } from 'lucide-react-native';
-import type { FileItem, SharedRoot } from '@fristy/protocol';
+import { ArrowDownToLine, ArrowUpFromLine, ChevronLeft, File as FileIcon, Folder, Image as ImageIcon, MonitorPlay, Pause, Play, Share2, X } from 'lucide-react-native';
+import { OPENABLE_EXTENSIONS, type FileItem, type SharedRoot } from '@fristy/protocol';
 import { formatBytes } from '@fristy/shared';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
@@ -98,6 +98,16 @@ export function FilesScreen() {
                 {it.name}
               </Text>
               {!it.dir && <Text style={{ color: c.textFaint, fontSize: font.tiny }}>{formatBytes(it.size)}</Text>}
+              {!it.dir && (OPENABLE_EXTENSIONS as readonly string[]).includes(it.name.split('.').pop()?.toLowerCase() ?? '') && (
+                <Pressable
+                  hitSlop={8}
+                  accessibilityLabel={t('files.openOnPc')}
+                  onPress={() => void act.run(() => connection.call('files.open', { rootId: root.id, path: [...path, it.name].join('/') }))}
+                  style={{ paddingHorizontal: 6 }}
+                >
+                  <MonitorPlay color={c.accent} size={18} />
+                </Pressable>
+              )}
               {!it.dir && <ArrowDownToLine color={c.textMuted} size={16} />}
             </Pressable>
           ))}

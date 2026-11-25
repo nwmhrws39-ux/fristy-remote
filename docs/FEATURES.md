@@ -63,6 +63,11 @@ Legend: ✅ implemented · ⚠️ implemented with limitations · ❌ not implem
 | Approved shared folders, traversal protection | ✅ | `..`, absolute, UNC, ADS and symlink escapes rejected (tested) |
 | Resume after disconnect | ❌ | A dropped transfer must be restarted |
 | Macros (whitelisted steps, icons, colors) | ✅ | Each step permission-checked |
+| Clipboard send/receive (text) | ✅ | Separate `clipboard` permission |
+| Open shared media/documents on the PC | ✅ | Extension allow-list (video, audio, images, PDF, Office, text); executables/scripts/shortcuts refused |
+| Message to PC (+ read aloud) | ✅ | Windows notification + System.Speech |
+| Presentation remote | ✅ | Next/previous, start (F5), black screen (B), end |
+| Laptop battery on dashboard | ✅ | Hidden on desktops |
 
 ## Phase 4 – Remote
 
@@ -70,7 +75,9 @@ Legend: ✅ implemented · ⚠️ implemented with limitations · ❌ not implem
 |---|---|---|
 | Internet access via relay | ✅ | Blind E2E-encrypted relay, PC proves key ownership, see [RELAY.md](RELAY.md) |
 | NAT traversal / peer-to-peer | ❌ | The relay is used instead; no hole punching |
-| **Remote desktop streaming (WebRTC)** | ❌ | Not implemented in v0.1. The `screen` permission is reserved and cannot be granted. Design notes in [ROADMAP.md](ROADMAP.md) |
+| Remote screen viewing | ⚠️ | JPEG frames pulled over the encrypted channel (≈5–10 fps on Wi-Fi, fewer over Tailscale). Tap = click, long-press = right click, pinch zoom (iOS), multi-monitor, quality presets, full screen, save screenshot. Needs the `screen` permission **and** "Allow screen viewing" on the PC; an on-screen indicator shows while viewed. No audio, not suited to video/games |
+| WebRTC streaming (high fps, audio) | ❌ | Design notes in [ROADMAP.md](ROADMAP.md) |
+| Away from home via Tailscale | ✅ | See [AWAY_FROM_HOME.md](AWAY_FROM_HOME.md) |
 | Mobile notifications | ⚠️ | Local notifications from live events while the app runs / is recently backgrounded. No push server, so a fully closed app gets nothing |
 | FRISTY Launcher integration | ✅ | Optional, localhost-only, token in OS secure storage. Spec in [INTEGRATIONS.md](INTEGRATIONS.md) |
 | FRISTY PC Manager / Cleaner | ❌ | API contract reserved, no client code yet |

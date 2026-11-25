@@ -61,6 +61,12 @@ export function createWindowsPlatform(helperScript: string, opener: Opener): Pla
     async mouseMove(dx, dy) {
       await helper.call('mouseMove', { dx, dy });
     },
+    async moveCursor(x, y) {
+      await helper.call('moveTo', { x: Math.round(x), y: Math.round(y) });
+    },
+    async speak(text) {
+      await helper.call('speak', { text });
+    },
     async mouseButton(button, action) {
       await helper.call('mouseButton', { button, action });
     },

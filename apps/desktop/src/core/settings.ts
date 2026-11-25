@@ -7,6 +7,8 @@ export const SettingsSchema = z.object({
   remoteEnabled: z.boolean(),
   /** global gate for remote mouse/keyboard, in addition to per-device permission */
   inputEnabled: z.boolean(),
+  /** global gate for remote screen viewing, in addition to per-device permission */
+  screenEnabled: z.boolean(),
   port: z.number().int().min(1024).max(65535),
   language: z.enum(['en', 'he']),
   theme: z.enum(['dark', 'light']),
@@ -28,6 +30,7 @@ export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = {
   remoteEnabled: true,
   inputEnabled: false,
+  screenEnabled: false,
   port: DEFAULT_CONTROL_PORT,
   language: 'en',
   theme: 'dark',

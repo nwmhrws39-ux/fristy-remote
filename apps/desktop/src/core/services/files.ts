@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { FILE_CHUNK_BYTES, type FileItem, type SharedRoot, type TransferRecord } from '@fristy/protocol';
+import { FILE_CHUNK_BYTES, OPENABLE_EXTENSIONS, type FileItem, type SharedRoot, type TransferRecord } from '@fristy/protocol';
 import { randomId } from '@fristy/shared';
 import type { SharedFolderRow, Store, TransferRow } from '../db';
 
@@ -135,6 +135,21 @@ export class FileService {
     if (!t || t.row.deviceId !== deviceId) throw new FileError('not_found', 'transfer not found');
     t.touched = Date.now();
     return t;
+  }
+
+  /**
+   * Resolves a shared file that may be opened on the PC with its default app.
+   * Only media/document extensions are allowed – never executables, scripts or shortcuts.
+   */
+  async resolveForOpen(rootId: string, rel: string): Promise<string> {
+    const filePath = await resolveInside(this.root(rootId).path, rel, true);
+    const st = await fsp.stat(filePath);
+    if (!st.isFile()) throw new FileError('bad_request', 'not a file');
+    const ext = path.extname(filePath).slice(1).toLowerCase();
+    if (!(OPENABLE_EXTENSIONS as readonly string[]).includes(ext)) {
+      throw new FileError('forbidden', 'only media and document files can be opened on the PC');
+    }
+    return filePath;
   }
 
   async downloadStart(deviceId: string, rootId: string, rel: string) {

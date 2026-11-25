@@ -9,6 +9,7 @@ import { createHandlers } from './handlers';
 import { FristyLauncherClient } from './integrations/fristy-launcher';
 import { PairingManager } from './pairing';
 import type { Platform } from './platform/types';
+import type { DesktopBridge } from './bridge';
 import { RelayClient, type RelayStatus } from './relay-client';
 import { ControlServer, type PendingPairing, type SessionInfo } from './server';
 import { AppService } from './services/apps';
@@ -32,6 +33,8 @@ export interface CoreOptions {
   discovery?: boolean;
   /** location of sql-wasm.wasm when bundled */
   sqlWasmPath?: string;
+  /** Electron capabilities (screen capture, clipboard, notifications, shell) */
+  desktop?: DesktopBridge;
 }
 
 export interface PairingView {
@@ -61,6 +64,7 @@ type CoreEvents = {
   state: [CoreState];
   'pairing-request': [PendingPairing];
   'input-activity': [{ deviceName: string }];
+  'screen-activity': [{ deviceName: string }];
   security: [{ message: string; remote: string }];
 };
 
@@ -120,6 +124,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       macros: this.macros,
       procs: this.procs,
       stats: () => this.stats(),
+      desktop: opts.desktop,
       broadcast: (e, d, p) => this.server.broadcast(e, d, p ?? null)
     });
     this.server = new ControlServer({
@@ -145,6 +150,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
     this.server.on('sessions-changed', () => this.emitState());
     this.server.on('devices-changed', () => this.emitState());
     this.server.on('input-activity', (a) => this.emit('input-activity', a));
+    this.server.on('screen-activity', (a) => this.emit('screen-activity', a));
     this.server.on('security', (s) => this.emit('security', s));
     this.relay.on('status', () => this.emitState());
     this.settings.onChange((s, changed) => {
@@ -191,6 +197,9 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   }
 
   private async applySettings(s: Settings, changed: (keyof Settings)[]) {
+    if (changed.includes('screenEnabled')) {
+      this.store.log('security', 'screen', `Screen viewing ${s.screenEnabled ? 'enabled' : 'disabled'} by owner`);
+    }
     if (changed.includes('inputEnabled')) {
       this.server.broadcast('inputState', { enabled: s.inputEnabled });
       this.store.log('security', 'input', `Remote input ${s.inputEnabled ? 'enabled' : 'disabled'} by owner`);
@@ -270,8 +279,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   /* ---------------- emergency stop ---------------- */
 
   emergencyStop() {
-    this.settings.update({ inputEnabled: false });
-    this.store.log('security', 'input', 'Emergency stop: remote input disabled');
+    this.settings.update({ inputEnabled: false, screenEnabled: false });
+    this.store.log('security', 'input', 'Emergency stop: remote input and screen viewing disabled');
   }
 
   /* ---------------- stats & alerts ---------------- */

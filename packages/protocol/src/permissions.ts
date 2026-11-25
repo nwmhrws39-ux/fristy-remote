@@ -14,7 +14,8 @@ export const PERMISSIONS = [
   'audio', // volume, mute, media keys, device selection
   'files', // transfer files inside owner-approved shared folders
   'macros', // run owner-defined macros (each step is still permission-checked)
-  'screen' // remote desktop viewing (not implemented in v0.1)
+  'screen', // view the PC screen (also needs global "allow screen viewing")
+  'clipboard' // read/write the PC clipboard (text only)
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

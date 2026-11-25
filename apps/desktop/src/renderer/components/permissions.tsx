@@ -1,4 +1,4 @@
-import { Activity, AppWindow, FolderSync, Gamepad2, Monitor, MousePointer2, Power, Volume2, Zap } from 'lucide-react';
+import { Activity, AppWindow, ClipboardList, FolderSync, Gamepad2, Monitor, MousePointer2, Power, Volume2, Zap } from 'lucide-react';
 import { PERMISSIONS, type Permission } from '@fristy/protocol';
 import type { StringKey } from '@fristy/shared/src/i18n';
 import { useI18n } from '../lib/i18n';
@@ -13,13 +13,13 @@ export const PERMISSION_ICONS: Record<Permission, typeof Power> = {
   audio: Volume2,
   files: FolderSync,
   macros: Zap,
-  screen: Monitor
+  screen: Monitor,
+  clipboard: ClipboardList
 };
 
-/** Permissions that can be granted in v0.1 (screen streaming is not implemented). */
-export const GRANTABLE: Permission[] = PERMISSIONS.filter((p) => p !== 'screen');
+export const GRANTABLE: Permission[] = [...PERMISSIONS];
 
-const SENSITIVE: Permission[] = ['power', 'input', 'files'];
+const SENSITIVE: Permission[] = ['power', 'input', 'files', 'screen', 'clipboard'];
 
 export function PermissionPicker({ value, onChange }: { value: Permission[]; onChange: (v: Permission[]) => void }) {
   const { t } = useI18n();

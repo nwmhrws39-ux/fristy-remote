@@ -18,6 +18,8 @@ export function createUnsupportedPlatform(opener?: { openExternal(url: string): 
     scheduleShutdown: unsupported,
     cancelShutdown: unsupported,
     mouseMove: unsupported,
+    moveCursor: unsupported,
+    speak: unsupported,
     mouseButton: unsupported,
     scroll: unsupported,
     typeText: unsupported,

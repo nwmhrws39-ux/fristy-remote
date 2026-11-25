@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Keyboard as KeyboardIcon, Monitor, QrCode, Radar } from 'lucide-react-native';
@@ -19,8 +19,13 @@ export function PairScreen({ onPaired, onCancel }: { onPaired: (h: PairedHost) =
   const [error, setError] = useState<string | null>(null);
   const [perm, requestPerm] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  // The camera reports the same QR many times per second, faster than React re-renders.
+  // A ref guarantees exactly one pairing attempt (pairing codes are single-use).
+  const busy = useRef(false);
 
   const start = async (target: PairTarget) => {
+    if (busy.current) return;
+    busy.current = true;
     setMode('waiting');
     setSas(null);
     setError(null);
@@ -30,6 +35,8 @@ export function PairScreen({ onPaired, onCancel }: { onPaired: (h: PairedHost) =
       setError((e as Error).message);
       setMode('menu');
       setScanned(false);
+    } finally {
+      busy.current = false;
     }
   };
 
@@ -74,6 +81,7 @@ export function PairScreen({ onPaired, onCancel }: { onPaired: (h: PairedHost) =
             scanned
               ? undefined
               : ({ data }) => {
+                  if (busy.current) return;
                   const qr = decodePairingQr(data);
                   if (!qr) return;
                   setScanned(true);

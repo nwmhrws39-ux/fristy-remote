@@ -17,6 +17,12 @@ export function buildMagicPacket(mac: string): Uint8Array {
   return packet;
 }
 
+/** True for the CGNAT range 100.64.0.0/10 used by Tailscale. */
+export function isTailscaleIPv4(ip: string): boolean {
+  const m = /^100\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(ip);
+  return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
+}
+
 /** Computes the IPv4 directed broadcast address for an address/netmask pair. */
 export function broadcastAddress(ip: string, netmask: string): string | null {
   const a = ip.split('.').map(Number);

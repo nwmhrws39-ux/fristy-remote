@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { isTailscaleIPv4 } from '@fristy/shared';
 import type { FristyCore } from '../core';
 
 export interface DiagnosticCheck {
@@ -64,6 +65,16 @@ export async function runDiagnostics(core: FristyCore): Promise<DiagnosticCheck[
     label: 'LAN addresses',
     status: st.addresses.length ? 'ok' : 'error',
     detail: st.addresses.length ? st.addresses.join(', ') : 'No IPv4 network connection'
+  });
+
+  const ts = st.addresses.find(isTailscaleIPv4);
+  checks.push({
+    id: 'tailscale',
+    label: 'Tailscale (away from home)',
+    status: ts ? 'ok' : 'info',
+    detail: ts
+      ? `Reachable from your Tailscale devices at ${ts}:${st.port}. Re-open the phone app once at home so it learns this address.`
+      : 'Not detected. Install Tailscale on this PC and your phone (same account) to use FRISTY Remote away from home.'
   });
 
   checks.push({

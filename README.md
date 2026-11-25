@@ -38,7 +38,7 @@ choose permissions and click **Approve**. Done: the phone reconnects automatical
   remote input instantly.
 - **Files:** add shared folders on the PC (Files page). Nothing else is visible to phones.
 - **Apps & websites:** click *Detect installed* or add apps and approved websites on the Apps page.
-- **Internet access:** run a relay ([docs/RELAY.md](docs/RELAY.md)) and enter its `wss://` URL in Settings.
+- **Away from home:** free with Tailscale ([docs/AWAY_FROM_HOME.md](docs/AWAY_FROM_HOME.md)), or run your own relay ([docs/RELAY.md](docs/RELAY.md)).
 - **Wake-on-LAN:** see the hardware/BIOS checklist in [docs/WAKE_ON_LAN.md](docs/WAKE_ON_LAN.md).
 
 ## Repository layout
@@ -76,7 +76,8 @@ npm run test:e2e          # Electron end-to-end test (xvfb-run on Linux)
 |---|---|---|
 | Windows installer (.exe) | `npm run desktop:dist` (on Windows, or CI `windows-latest`) | [docs/BUILD_WINDOWS.md](docs/BUILD_WINDOWS.md) |
 | Android APK | `cd apps/mobile && eas build -p android --profile preview` | [docs/BUILD_ANDROID.md](docs/BUILD_ANDROID.md) |
-| iOS | `cd apps/mobile && eas build -p ios` | [docs/BUILD_IOS.md](docs/BUILD_IOS.md) |
+| iOS (free, unsigned .ipa for Sideloadly) | GitHub Actions → *iOS app (unsigned .ipa)* | [docs/BUILD_IOS.md](docs/BUILD_IOS.md) |
+| iOS (App Store / TestFlight) | `cd apps/mobile && eas build -p ios` | [docs/BUILD_IOS.md](docs/BUILD_IOS.md) |
 | Relay (Docker) | `docker build -f apps/relay-server/Dockerfile -t fristy-relay .` | [docs/RELAY.md](docs/RELAY.md) |
 
 ## Dependencies

@@ -1,7 +1,7 @@
 import dgram from 'node:dgram';
 import os from 'node:os';
 import { DISCOVERY_PORT, DISCOVERY_REQUEST, PROTOCOL_VERSION, type DiscoveryBeacon } from '@fristy/protocol';
-import { RateLimiter } from '@fristy/shared';
+import { RateLimiter, isTailscaleIPv4 } from '@fristy/shared';
 
 /**
  * LAN discovery responder. Phones broadcast DISCOVERY_REQUEST on UDP 47801 and
@@ -58,17 +58,30 @@ function isPrivateIPv4(ip: string): boolean {
   return /^10\./.test(ip) || /^192\.168\./.test(ip) || /^172\.(1[6-9]|2\d|3[01])\./.test(ip) || /^169\.254\./.test(ip);
 }
 
-/** IPv4 LAN addresses, private ranges first (virtual adapters such as vEthernet last). */
+/**
+ * IPv4 addresses phones can use: private LAN ranges first, then Tailscale
+ * (100.64.0.0/10, works away from home), then everything else; virtual
+ * adapters (Hyper-V, WSL, Docker …) last.
+ */
 export function lanAddresses(): string[] {
   const out: { ip: string; score: number }[] = [];
   for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs ?? []) {
       if (a.family !== 'IPv4' || a.internal) continue;
-      let score = isPrivateIPv4(a.address) ? 10 : 0;
-      if (/vethernet|virtual|vmware|vbox|hyper-v|docker|wsl|tailscale|zerotier/i.test(name)) score -= 5;
+      let score = isPrivateIPv4(a.address) ? 10 : isTailscaleIPv4(a.address) ? 6 : 0;
+      if (/vethernet|virtual|vmware|vbox|hyper-v|docker|wsl|zerotier/i.test(name)) score -= 5;
       if (/^169\.254\./.test(a.address)) score -= 8;
       out.push({ ip: a.address, score });
     }
   }
   return out.sort((a, b) => b.score - a.score).map((x) => x.ip);
+}
+
+/** Addresses advertised to phones (QR code and session info). Always keeps a Tailscale address if present. */
+export function advertisedAddresses(max = 6): string[] {
+  const all = lanAddresses();
+  const picked = all.slice(0, max);
+  const ts = all.find(isTailscaleIPv4);
+  if (ts && !picked.includes(ts)) picked[picked.length - 1] = ts;
+  return picked;
 }

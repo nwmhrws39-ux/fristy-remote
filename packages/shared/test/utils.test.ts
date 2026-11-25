@@ -7,6 +7,7 @@ import {
   formatBytes,
   formatPercent,
   formatTemp,
+  isTailscaleIPv4,
   normalizeMac,
   translate
 } from '../src';
@@ -47,6 +48,12 @@ describe('Wake-on-LAN', () => {
     expect(p.length).toBe(102);
     expect(Array.from(p.slice(0, 6))).toEqual([255, 255, 255, 255, 255, 255]);
     expect(Array.from(p.slice(96, 102))).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+  it('recognizes Tailscale addresses', () => {
+    expect(isTailscaleIPv4('100.101.5.7')).toBe(true);
+    expect(isTailscaleIPv4('100.63.0.1')).toBe(false);
+    expect(isTailscaleIPv4('100.128.0.1')).toBe(false);
+    expect(isTailscaleIPv4('192.168.1.30')).toBe(false);
   });
   it('computes broadcast addresses', () => {
     expect(broadcastAddress('192.168.1.23', '255.255.255.0')).toBe('192.168.1.255');

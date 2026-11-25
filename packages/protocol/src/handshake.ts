@@ -80,7 +80,9 @@ export const HostInfoSchema = z.object({
   protocolVersion: z.number().int(),
   inputEnabled: z.boolean(),
   /** relay URL the phone may use when it is not on the same network (null = LAN only) */
-  relayUrl: z.string().max(512).nullable()
+  relayUrl: z.string().max(512).nullable(),
+  /** current IPv4 addresses of the PC (LAN + VPN such as Tailscale) so phones can update stored routes */
+  addresses: z.array(z.string().max(64)).max(8).optional()
 });
 export type HostInfo = z.infer<typeof HostInfoSchema>;
 

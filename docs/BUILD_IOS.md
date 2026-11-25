@@ -3,6 +3,22 @@
 Requirements: a Mac with Xcode 16+ (or EAS Build in the cloud), an Apple Developer account,
 and Node 22.
 
+## Free option – GitHub build + Sideloadly (no Mac, no paid account)
+
+1. GitHub → **Actions → "iOS app (unsigned .ipa)"** → latest run → download the
+   **FRISTY-Remote-iOS** artifact and unzip it (`FRISTY-Remote-unsigned.ipa`).
+   (Run it manually with **Run workflow** if there is no run yet.)
+2. On Windows install **iTunes** and **iCloud** from apple.com (not the Microsoft Store
+   versions), then **Sideloadly** (sideloadly.io).
+3. Connect the iPhone by cable, tap **Trust** on the phone, drag the `.ipa` into Sideloadly,
+   enter your normal Apple ID and click **Start**.
+4. On the iPhone: **Settings → General → VPN & Device Management** → trust your Apple ID;
+   **Settings → Privacy & Security → Developer Mode** → on (restart).
+
+Limits of a free Apple ID: the app must be **re-installed every 7 days** (Sideloadly can
+refresh automatically while the PC is on) and you can have up to 3 such apps. Push
+notifications are not available; FRISTY's local notifications still work.
+
 ## Option A – EAS Build
 
 ```bash

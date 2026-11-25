@@ -51,6 +51,7 @@ describe('authentication', () => {
     const acc = await again.connect();
     expect(acc.paired).toBe(false);
     expect(acc.deviceId).toBe(accepted.deviceId);
+    expect(Array.isArray(acc.host.addresses)).toBe(true); // phones refresh stored routes (e.g. Tailscale)
     expect(await again.latency()).toBeGreaterThanOrEqual(0);
   });
 

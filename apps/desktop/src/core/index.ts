@@ -4,7 +4,7 @@ import path from 'node:path';
 import { STATS_INTERVAL_MS, encodePairingQr, type Permission, type SystemStats } from '@fristy/protocol';
 import { encodeBase64, fingerprint, type KeyPair } from '@fristy/shared';
 import { Store, type DeviceRow } from './db';
-import { DiscoveryResponder, lanAddresses, makeBeacon } from './discovery';
+import { DiscoveryResponder, advertisedAddresses, lanAddresses, makeBeacon } from './discovery';
 import { createHandlers } from './handlers';
 import { FristyLauncherClient } from './integrations/fristy-launcher';
 import { PairingManager } from './pairing';
@@ -131,7 +131,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       host: () => ({
         hostId: encodeBase64(opts.identity.publicKey),
         computerName: this.computerName,
-        appVersion: opts.appVersion
+        appVersion: opts.appVersion,
+        addresses: advertisedAddresses()
       })
     });
     this.relay = new RelayClient(opts.identity, (t) => this.server.attach(t));
@@ -245,7 +246,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
         pk: this.publicKey,
         pid: p.pairingId,
         secret: p.secret,
-        hosts: (lanAddresses().length ? lanAddresses() : ['127.0.0.1']).slice(0, 4),
+        hosts: advertisedAddresses().length ? advertisedAddresses() : ['127.0.0.1'],
         port: this.port || this.settings.get().port,
         name: this.computerName.slice(0, 64),
         exp: p.expiresAt

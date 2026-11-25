@@ -9,7 +9,7 @@ import {
   type SessionAccepted,
   type SystemStats
 } from '@fristy/protocol';
-import { RemoteClient, RemoteError, decodeBase64, type SocketLike } from '@fristy/shared';
+import { RemoteClient, RemoteError, decodeBase64, isTailscaleIPv4, type SocketLike } from '@fristy/shared';
 import { getIdentity } from '../store/secure';
 import { saveHost, setActiveHostKey, updateHost, type PairedHost } from '../store/hosts';
 
@@ -19,7 +19,7 @@ export interface ConnState {
   status: ConnStatus;
   host: PairedHost | null;
   accepted: SessionAccepted | null;
-  route: 'lan' | 'relay' | null;
+  route: 'lan' | 'tailscale' | 'relay' | null;
   error: string | null;
   latency: number | null;
   stats: SystemStats[];
@@ -140,9 +140,17 @@ export class ConnectionManager {
         this.attempt = 0;
         if (!this.wasOnline) this.onAlert({ type: 'startup', message: accepted.host.computerName });
         this.wasOnline = true;
-        const patch: Partial<PairedHost> = { name: accepted.host.computerName, relayUrl: accepted.host.relayUrl, ...(c.address ? { lastAddress: c.address } : {}) };
+        // Remember every address the PC reports (e.g. a Tailscale IP added after pairing) for use away from home.
+        const hosts = [...new Set([...(accepted.host.addresses ?? []), ...host.hosts])].slice(0, 8);
+        const patch: Partial<PairedHost> = {
+          name: accepted.host.computerName,
+          relayUrl: accepted.host.relayUrl,
+          hosts,
+          ...(c.address ? { lastAddress: c.address } : {})
+        };
         await updateHost(host.pk, patch);
-        this.set({ status: 'online', accepted, route: c.relay ? 'relay' : 'lan', error: null, host: { ...host, ...patch } });
+        const route = c.relay ? 'relay' : c.address && isTailscaleIPv4(c.address) ? 'tailscale' : 'lan';
+        this.set({ status: 'online', accepted, route, error: null, host: { ...host, ...patch } });
         this.afterConnect(accepted);
         return;
       } catch (e) {

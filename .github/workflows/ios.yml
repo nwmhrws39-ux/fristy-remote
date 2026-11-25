@@ -1,0 +1,69 @@
+name: iOS app (unsigned .ipa)
+
+# Builds an unsigned iPhone app. Install it with Sideloadly or AltStore using a
+# free Apple ID (they sign it on your PC). See docs/BUILD_IOS.md.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/**'
+      - 'package-lock.json'
+      - '.github/workflows/ios.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - name: Generate native iOS project
+        working-directory: apps/mobile
+        run: npx expo prebuild -p ios --clean
+
+      - name: Remove push-notification entitlement
+        # Free Apple IDs cannot sign apps that use remote push. FRISTY Remote only
+        # uses local notifications, which keep working without this entitlement.
+        working-directory: apps/mobile/ios
+        run: |
+          for f in */*.entitlements; do
+            /usr/libexec/PlistBuddy -c "Delete :aps-environment" "$f" 2>/dev/null || true
+          done
+
+      - name: Build (unsigned)
+        working-directory: apps/mobile/ios
+        run: |
+          WS=$(ls -d *.xcworkspace | head -1)
+          SCHEME="${WS%.xcworkspace}"
+          echo "Workspace: $WS  Scheme: $SCHEME"
+          set -o pipefail
+          xcodebuild -workspace "$WS" -scheme "$SCHEME" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/FRISTYRemote.xcarchive" archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | tail -n 80
+
+      - name: Package .ipa
+        run: |
+          cd "$RUNNER_TEMP"
+          mkdir -p Payload
+          cp -R FRISTYRemote.xcarchive/Products/Applications/*.app Payload/
+          zip -qry FRISTY-Remote-unsigned.ipa Payload
+          ls -lh FRISTY-Remote-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FRISTY-Remote-iOS
+          path: ${{ runner.temp }}/FRISTY-Remote-unsigned.ipa
+          if-no-files-found: error

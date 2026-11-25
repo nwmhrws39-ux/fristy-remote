@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   METHODS,
   PairRequestSchema,
+  SessionAcceptedSchema,
   decodePairingQr,
   encodePairingQr,
   hasPermission,
@@ -63,6 +64,17 @@ describe('pairing payloads', () => {
 });
 
 describe('permissions', () => {
+  it('older apps ignore permissions they do not know instead of failing', () => {
+    const parsed = SessionAcceptedSchema.safeParse({
+      kind: 'accepted',
+      deviceId: 'd',
+      paired: false,
+      permissions: ['monitor', 'teleport', 'screen'],
+      host: { hostId: 'h', computerName: 'PC', appVersion: '1', protocolVersion: 1, inputEnabled: false, relayUrl: null, futureField: 1 }
+    });
+    expect(parsed.success && parsed.data.permissions).toEqual(['monitor', 'screen']);
+  });
+
   it('checks grants', () => {
     expect(hasPermission(['monitor'], 'monitor')).toBe(true);
     expect(hasPermission(['monitor'], 'power')).toBe(false);

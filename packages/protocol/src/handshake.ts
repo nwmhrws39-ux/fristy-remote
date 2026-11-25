@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { PermissionSchema } from './permissions';
+import { PermissionListSchema } from './permissions';
 
 /** 32-byte key, base64 encoded (44 chars with padding). */
 export const Key32Schema = z
@@ -89,7 +89,7 @@ export type HostInfo = z.infer<typeof HostInfoSchema>;
 export const SessionAcceptedSchema = z.object({
   kind: z.literal('accepted'),
   deviceId: z.string(),
-  permissions: z.array(PermissionSchema),
+  permissions: PermissionListSchema,
   host: HostInfoSchema,
   /** true when this session was created by a fresh pairing */
   paired: z.boolean()

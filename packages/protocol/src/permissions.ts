@@ -24,6 +24,19 @@ export const PermissionSchema = z.enum(PERMISSIONS);
 /** Safe defaults pre-selected in the approval dialog. */
 export const DEFAULT_GRANTS: Permission[] = ['monitor', 'apps', 'games', 'audio'];
 
+export function isPermission(p: unknown): p is Permission {
+  return typeof p === 'string' && (PERMISSIONS as readonly string[]).includes(p);
+}
+
+/**
+ * Permission list as received from the PC. Unknown entries (added by a newer
+ * desktop version) are dropped instead of failing, so an older phone app keeps working.
+ */
+export const PermissionListSchema = z
+  .array(z.string().max(32))
+  .max(32)
+  .transform((list) => list.filter(isPermission));
+
 export function hasPermission(grants: readonly Permission[], needed: Permission | null): boolean {
   return needed === null || grants.includes(needed);
 }

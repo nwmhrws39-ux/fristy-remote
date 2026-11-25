@@ -1,5 +1,6 @@
 import {
   InboundToClientSchema,
+  PermissionListSchema,
   PairPendingSchema,
   PlainErrorFrameSchema,
   RelayToClientControlSchema,
@@ -183,10 +184,14 @@ export class RemoteClient {
       if (m.ok) p.resolve(m.result);
       else p.reject(new RemoteError(m.error.code, m.error.message));
     } else {
-      if (m.event === 'permissions' && this.accepted) {
-        this.accepted = { ...this.accepted, permissions: (m.data as ServerEvents['permissions']).permissions };
+      let data = m.data;
+      if (m.event === 'permissions') {
+        const perms = PermissionListSchema.safeParse((m.data as { permissions?: unknown } | null)?.permissions);
+        if (!perms.success) return;
+        data = { permissions: perms.data };
+        if (this.accepted) this.accepted = { ...this.accepted, permissions: perms.data };
       }
-      this.opts.onEvent?.(m.event as EventName, m.data as never);
+      this.opts.onEvent?.(m.event as EventName, data as never);
     }
   }
 

@@ -154,9 +154,13 @@ function TransferRow({ tr }: { tr: LocalTransfer }) {
               if (media && !saved) {
                 const perm = await MediaLibrary.requestPermissionsAsync(true);
                 if (perm.granted) {
-                  await MediaLibrary.saveToLibraryAsync(tr.localUri!);
-                  setSaved(true);
-                  return;
+                  try {
+                    await MediaLibrary.saveToLibraryAsync(tr.localUri!);
+                    setSaved(true);
+                    return;
+                  } catch {
+                    // Photos rejects some formats (e.g. MKV) – fall back to the share sheet ("Save to Files").
+                  }
                 }
               }
               if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(tr.localUri!);

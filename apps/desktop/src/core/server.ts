@@ -110,6 +110,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
   private connLimiter: RateLimiter;
   private lockout: FailureLockout;
   private housekeeping: NodeJS.Timeout;
+  private attemptLogged = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(private readonly deps: ServerDeps) {
@@ -176,6 +177,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
   attach(t: Transport): void {
     const settings = this.deps.settings.get();
     const plainReject = (code: string, message: string) => {
+      this.logAttempt(t.remote, `Connection refused: ${message}`);
       t.send(JSON.stringify({ t: 'err', code, message }));
       t.close(4003, message);
     };
@@ -194,6 +196,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
     const handshakeTimer = setTimeout(() => {
       if (stage === 'hello' || stage === 'open') {
         this.lockout.fail(t.remote);
+        this.logAttempt(t.remote, `Connection attempt timed out during ${stage === 'hello' ? 'handshake' : 'authentication'}`);
         t.close(4008, 'handshake timeout');
       }
     }, HANDSHAKE_TIMEOUT_MS);
@@ -338,6 +341,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
         if (e instanceof HandshakeError || e instanceof DecryptError) {
           this.lockout.fail(t.remote);
           if (stage === 'ready') this.deps.store.log('security', 'connection', `Dropped connection: ${e.message}`, session?.device.id, t.remote);
+          else this.logAttempt(t.remote, `Connection attempt failed: ${e.message}`);
         }
         stage = 'closed';
         t.close(4002, 'protocol error');
@@ -516,6 +520,15 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
     this.deps.store.log('security', 'auth', message, null, remote);
     this.emit('security', { message, remote });
     this.broadcast('alert', { type: 'unauthorizedAttempt', message }, 'monitor');
+  }
+
+  /** Logs failed pre-session attempts (at most once a minute per address) – helps diagnose routes like Tailscale. */
+  private logAttempt(remote: string, message: string) {
+    const last = this.attemptLogged.get(remote) ?? 0;
+    if (this.now() - last < 60_000) return;
+    this.attemptLogged.set(remote, this.now());
+    if (this.attemptLogged.size > 1000) this.attemptLogged.clear();
+    this.deps.store.log('warn', 'connection', message, null, remote);
   }
 
   private emitSessions() {

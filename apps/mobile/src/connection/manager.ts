@@ -25,6 +25,17 @@ export interface ConnState {
   latency: number | null;
   stats: SystemStats[];
   powerSchedule: { action: 'shutdown' | 'restart'; at: number } | null;
+  /** per-address results of the most recent connection attempt (for diagnostics) */
+  attempts: { address: string; ok: boolean; error: string | null; ms: number }[];
+  network: string | null;
+}
+
+export interface ProbeResult {
+  address: string;
+  kind: 'lan' | 'tailscale' | 'relay' | 'other';
+  ok: boolean;
+  detail: string;
+  ms: number;
 }
 
 type AlertHandler = (alert: ServerEvents['alert'] | { type: 'startup' | 'deviceDisconnected'; message: string }) => void;
@@ -52,7 +63,7 @@ export class ConnectionManager {
   private lastNetwork: string | null = null;
   onAlert: AlertHandler = () => undefined;
 
-  state: ConnState = { status: 'idle', host: null, accepted: null, route: null, error: null, latency: null, stats: [], powerSchedule: null };
+  state: ConnState = { status: 'idle', host: null, accepted: null, route: null, error: null, latency: null, stats: [], powerSchedule: null, attempts: [], network: null };
 
   constructor() {
     // Coming back to the app: verify a connection that looks alive, or reconnect right away.
@@ -155,6 +166,7 @@ export class ConnectionManager {
     try {
       const n = await Network.getNetworkStateAsync();
       onWifi = n.type === Network.NetworkStateType.WIFI || n.type === Network.NetworkStateType.ETHERNET;
+      this.set({ network: String(n.type) });
     } catch {
       /* unknown → assume Wi-Fi */
     }
@@ -185,6 +197,7 @@ export class ConnectionManager {
     this.set({ status: this.wasOnline ? 'reconnecting' : 'connecting' });
     const identity = await getIdentity();
     let lastError = 'computer not reachable';
+    const attempts: ConnState['attempts'] = [];
     for (const c of await this.candidates(host)) {
       if (!this.wanted || myGen !== this.gen) return;
       const client: RemoteClient = new RemoteClient({
@@ -206,8 +219,11 @@ export class ConnectionManager {
           }
         }
       });
+      const started = Date.now();
       try {
         const accepted = await client.connect();
+        attempts.push({ address: c.address ?? 'relay', ok: true, error: null, ms: Date.now() - started });
+        this.set({ attempts });
         if (!this.wanted || myGen !== this.gen) return client.close();
         this.client = client;
         this.attempt = 0;
@@ -230,6 +246,8 @@ export class ConnectionManager {
       } catch (e) {
         const err = e as RemoteError;
         lastError = err.message;
+        attempts.push({ address: c.address ?? 'relay', ok: false, error: `${err.code ?? 'error'}: ${err.message}`, ms: Date.now() - started });
+        this.set({ attempts });
         if (err.code === 'unknown_device' || err.code === 'revoked') {
           this.wanted = false;
           this.set({ status: 'unauthorized', error: err.message });
@@ -306,6 +324,46 @@ export class ConnectionManager {
         this.set({ status: 'unauthorized', error: (data as ServerEvents['revoked']).reason });
         break;
     }
+  }
+
+  /**
+   * Diagnostics: opens a plain WebSocket to every known address of the PC and
+   * reports which ones are reachable from this phone right now.
+   */
+  async probe(): Promise<ProbeResult[]> {
+    const h = this.state.host;
+    if (!h) return [];
+    const addrs = [...new Set([h.lastAddress, ...h.hosts].filter(Boolean) as string[])];
+    const one = (address: string, url: string, kind: ProbeResult['kind']) =>
+      new Promise<ProbeResult>((resolve) => {
+        const started = Date.now();
+        let done = false;
+        let ws: WebSocket;
+        const finish = (ok: boolean, detail: string) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          resolve({ address, kind, ok, detail, ms: Date.now() - started });
+        };
+        const timer = setTimeout(() => finish(false, 'timeout (6 s)'), 6000);
+        try {
+          ws = new WebSocket(url);
+        } catch (e) {
+          return finish(false, (e as Error).message);
+        }
+        ws.onopen = () => finish(true, 'reachable');
+        ws.onerror = (e) => finish(false, (e as unknown as { message?: string }).message || 'connection error');
+        ws.onclose = (e) => finish(false, `closed (${e.code}) ${e.reason ?? ''}`.trim());
+      });
+    const kindOf = (a: string): ProbeResult['kind'] => (isTailscaleIPv4(a) ? 'tailscale' : /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a) ? 'lan' : 'other');
+    const jobs = addrs.map((a) => one(a, `ws://${a}:${h.port}/fristy`, kindOf(a)));
+    if (h.relayUrl) jobs.push(one('relay', h.relayUrl, 'relay'));
+    return Promise.all(jobs);
   }
 
   call<M extends MethodName>(method: M, params: MethodParams<M>, timeoutMs?: number): Promise<MethodResults[M]> {

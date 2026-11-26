@@ -65,6 +65,8 @@ export const IPC = {
   'launcher.setToken': z.object({ token: z.string().max(512).nullable() }).strict(),
   'launcher.test': none,
   'app.info': none,
+  'owner.login': z.object({ code: z.string().min(1).max(128) }).strict(),
+  'owner.refresh': none,
   'shell.openDocs': z.object({ page: z.enum(['wol', 'security', 'readme']) }).strict()
 } as const;
 

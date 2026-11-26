@@ -102,6 +102,8 @@ export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl
       const client = new FristyLauncherClient(s.launcherApiUrl, () => secrets.get('launcher-token'));
       return client.health();
     },
+    'owner.login': (p: { code: string }) => core.owner.login(p.code),
+    'owner.refresh': () => core.owner.checkIn(),
     'app.info': () => ({ version: app.getVersion(), platform: process.platform, electron: process.versions.electron }),
     'shell.openDocs': (p: { page: 'wol' | 'security' | 'readme' }) => {
       // Documentation ships with the app (extraResources/docs) – no network needed.

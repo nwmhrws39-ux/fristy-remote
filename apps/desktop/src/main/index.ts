@@ -252,6 +252,7 @@ app.whenReady().then(async () => {
     appVersion: app.getVersion(),
     sqlWasmPath: path.join(__dirname, 'sql-wasm.wasm'),
     desktop: desktopBridge,
+    ownerApiUrl: process.env.FRISTY_ADMIN_API_URL ?? '',
     launcherToken: () => secrets.get('launcher-token'),
     iconFor: async (exe) => {
       try {

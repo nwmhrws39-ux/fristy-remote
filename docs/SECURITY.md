@@ -102,6 +102,16 @@ connections additionally use `wss://`, and the desktop refuses non-TLS relay URL
 - Security log (pairings, rejections, permission denials, actions) stays on the PC and is
   capped at 5,000 entries.
 
+## Owner service (optional)
+
+Builds configured with an owner service (`apps/admin-server`, see [ADMIN.md](ADMIN.md)) check in
+with a random install id, the name the user typed, device type, platform and app version. The
+service stores Cloudflare's country code but **never IP addresses** (the IP is used only, hashed,
+as a rate-limit key). Users are told this on first launch. The admin code is verified only on the
+server (SHA-256, constant-time, 5 attempts per hour per network and per install); admin tokens are
+stored hashed and can be revoked. The service can lock or block the FRISTY apps, but it has **no
+path to any user's computer**: it cannot control, view or wake PCs, and it does not bypass pairing.
+
 ## Explicit non-goals
 
 - No hidden or unattended "stealth" access: the tray icon is always present, and every

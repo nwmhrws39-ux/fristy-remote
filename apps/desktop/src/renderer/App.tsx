@@ -124,6 +124,7 @@ function Shell({ state }: { state: CoreState }) {
       <main className="flex-1 overflow-y-auto">
         <div className="drag h-10" />
         <div className="mx-auto max-w-6xl px-8 pb-10">
+          <OwnerBanners state={state} />
           {page === 'dashboard' && <Dashboard state={state} go={setPage} />}
           {page === 'devices' && <Devices state={state} />}
           {page === 'games' && <Games />}
@@ -182,5 +183,27 @@ function PairingRequestDialog({ request, onDone }: { request: PendingPairing | n
       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">{t('pair.grant')}</div>
       <PermissionPicker value={perms} onChange={setPerms} />
     </Modal>
+  );
+}
+
+function OwnerBanners({ state }: { state: CoreState }) {
+  const { t } = useI18n();
+  const o = state.owner;
+  if (!o?.enabled) return null;
+  return (
+    <div className="mb-4 space-y-2">
+      {o.locked && !o.admin && (
+        <div className="rounded-2xl border border-bad/40 bg-bad/10 p-4 text-sm">
+          <div className="font-bold text-bad">{o.reason === 'blocked' ? t('owner.blocked') : t('owner.locked')}</div>
+          <div className="mt-1 text-muted">{o.message || t('owner.lockedHint')}</div>
+        </div>
+      )}
+      {o.announcement && (
+        <div className="rounded-2xl border border-accent/40 bg-accent/10 p-4 text-sm text-fg" dir="auto">
+          📢 {o.announcement}
+        </div>
+      )}
+      {o.updateAvailable && <div className="rounded-2xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn">{t('owner.update')}</div>}
+    </div>
   );
 }

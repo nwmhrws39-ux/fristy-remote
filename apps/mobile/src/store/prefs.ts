@@ -23,6 +23,8 @@ export interface Prefs {
   naturalScroll: boolean;
   haptics: boolean;
   notifications: NotificationPrefs;
+  /** name shown to the app owner (only used when the owner service is configured) */
+  userName: string;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -32,6 +34,7 @@ export const DEFAULT_PREFS: Prefs = {
   sensitivity: 1.4,
   naturalScroll: false,
   haptics: true,
+  userName: '',
   notifications: {
     startup: true,
     shutdown: true,

@@ -39,6 +39,7 @@ choose permissions and click **Approve**. Done: the phone reconnects automatical
 - **Files:** add shared folders on the PC (Files page). Nothing else is visible to phones.
 - **Apps & websites:** click *Detect installed* or add apps and approved websites on the Apps page.
 - **Away from home:** free with Tailscale ([docs/AWAY_FROM_HOME.md](docs/AWAY_FROM_HOME.md)), or run your own relay ([docs/RELAY.md](docs/RELAY.md)).
+- **Owner admin panel (optional):** see who uses your builds, lock the app for everyone else, announcements – free on Cloudflare ([docs/ADMIN.md](docs/ADMIN.md)).
 - **Wake-on-LAN:** see the hardware/BIOS checklist in [docs/WAKE_ON_LAN.md](docs/WAKE_ON_LAN.md).
 
 ## Repository layout
@@ -47,6 +48,7 @@ choose permissions and click **Approve**. Done: the phone reconnects automatical
 apps/desktop         Electron app (src/core = testable Node core, src/main, src/preload, src/renderer)
 apps/mobile          Expo / React Native app
 apps/relay-server    Optional internet relay (+ Dockerfile)
+apps/admin-server    Optional owner service: check-ins, app lock, announcements (Cloudflare Worker + D1)
 packages/protocol    Wire protocol: Zod schemas, permissions, RPC method table
 packages/shared      Encrypted channel, RemoteClient, rate limiter, WoL, i18n (EN/HE)
 packages/ui          Shared design tokens and theme

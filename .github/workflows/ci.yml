@@ -47,6 +47,7 @@ jobs:
       - name: Build installer
         run: npm run dist -w @fristy/desktop
         env:
+          FRISTY_ADMIN_API_URL: ${{ vars.ADMIN_API_URL }}
           # Optional code signing (recommended to avoid SmartScreen warnings):
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}

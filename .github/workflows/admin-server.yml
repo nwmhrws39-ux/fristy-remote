@@ -1,0 +1,68 @@
+name: Admin server (Cloudflare)
+
+# Deploys the owner service (check-ins, app lock, announcements) to Cloudflare
+# Workers + D1 – both free, no credit card. Needs these repository secrets:
+#   CLOUDFLARE_API_TOKEN   (token with "Workers Scripts: Edit" and "D1: Edit")
+#   CLOUDFLARE_ACCOUNT_ID
+#   ADMIN_CODE             (your secret admin code – never put it in code or chat)
+# After the first deploy, copy the printed URL into the repository VARIABLE
+# ADMIN_API_URL, then rebuild the apps. See docs/ADMIN.md.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/admin-server/**'
+      - '.github/workflows/admin-server.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ADMIN_CODE: ${{ secrets.ADMIN_CODE }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$ADMIN_CODE" ]; then
+            echo "::notice::Admin server not configured yet – add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and ADMIN_CODE secrets (docs/ADMIN.md)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.cfg.outputs.ready == 'true'
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Create database (first run) and apply schema
+        if: steps.cfg.outputs.ready == 'true'
+        working-directory: apps/admin-server
+        run: |
+          find_id() { npx wrangler d1 list --json | node -e "const l=JSON.parse(require('fs').readFileSync(0,'utf8'));const d=l.find(x=>x.name==='fristy-admin');process.stdout.write(d?(d.uuid||d.database_id||''):'')"; }
+          ID=$(find_id)
+          if [ -z "$ID" ]; then npx wrangler d1 create fristy-admin; ID=$(find_id); fi
+          [ -n "$ID" ] || { echo "::error::could not create or find the D1 database"; exit 1; }
+          sed "s/__DATABASE_ID__/$ID/" wrangler.toml.template > wrangler.toml
+          npx wrangler d1 execute fristy-admin --remote --file schema.sql -y
+      - name: Deploy worker
+        if: steps.cfg.outputs.ready == 'true'
+        working-directory: apps/admin-server
+        run: |
+          npx wrangler deploy | tee deploy.log
+          printf '%s' "$ADMIN_CODE" | npx wrangler secret put ADMIN_CODE
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "### Admin server deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: \`$URL\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Set the repository variable **ADMIN_API_URL** to this URL, then rebuild the apps." >> "$GITHUB_STEP_SUMMARY"

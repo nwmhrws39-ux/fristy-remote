@@ -69,6 +69,8 @@ export interface ServerDeps {
   handlers: Handlers;
   host: () => Omit<HostInfo, 'inputEnabled' | 'protocolVersion' | 'relayUrl'>;
   now?: () => number;
+  /** when the app owner has locked FRISTY Remote: the message to show; null when unlocked */
+  ownerLock?: () => string | null;
 }
 
 interface Session {
@@ -182,6 +184,8 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
       t.close(4003, message);
     };
     if (!settings.remoteEnabled) return plainReject('remote_disabled', 'Remote access is disabled on this computer');
+    const lock = this.deps.ownerLock?.();
+    if (lock !== null && lock !== undefined) return plainReject('remote_disabled', lock || 'FRISTY Remote has been locked by its owner');
     if (t.kind === 'relay' && !settings.relayEnabled) return plainReject('remote_disabled', 'Internet access is disabled');
     if (this.lockout.isLocked(t.remote) || !this.connLimiter.take(t.remote)) {
       return plainReject('rate_limited', 'Too many attempts, try again later');

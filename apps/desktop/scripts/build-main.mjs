@@ -18,7 +18,11 @@ const common = {
   minify: production,
   external: ['electron', 'bufferutil', 'utf-8-validate', 'osx-temperature-sensor'],
   logLevel: 'info',
-  define: { 'process.env.NODE_ENV': JSON.stringify(production ? 'production' : 'development') }
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(production ? 'production' : 'development'),
+    // Optional owner service URL, injected at build time (GitHub variable ADMIN_API_URL).
+    'process.env.FRISTY_ADMIN_API_URL': JSON.stringify(process.env.FRISTY_ADMIN_API_URL ?? '')
+  }
 };
 
 await build({ ...common, entryPoints: ['src/main/index.ts'], outfile: path.join(out, 'main', 'index.js') });

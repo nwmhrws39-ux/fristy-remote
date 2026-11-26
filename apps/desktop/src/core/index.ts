@@ -18,6 +18,7 @@ import { GameService } from './services/games';
 import { MacroService } from './services/macros';
 import { ProcessCache } from './services/processes';
 import { SettingsManager, type Settings } from './settings';
+import { OwnerClient, type OwnerStatus } from './owner';
 
 export interface CoreOptions {
   /** directory for the database; null = in-memory (tests) */
@@ -35,6 +36,9 @@ export interface CoreOptions {
   sqlWasmPath?: string;
   /** Electron capabilities (screen capture, clipboard, notifications, shell) */
   desktop?: DesktopBridge;
+  /** optional owner service URL (apps/admin-server); empty = disabled */
+  ownerApiUrl?: string;
+  fetchImpl?: typeof fetch;
 }
 
 export interface PairingView {
@@ -58,6 +62,7 @@ export interface CoreState {
   pending: PendingPairing[];
   pairing: PairingView | null;
   relay: { status: RelayStatus; error: string | null };
+  owner: OwnerStatus;
 }
 
 type CoreEvents = {
@@ -79,6 +84,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   readonly procs: ProcessCache;
   private discovery: DiscoveryResponder | null = null;
   private relay: RelayClient;
+  readonly owner: OwnerClient;
   private statsTimer: NodeJS.Timeout | null = null;
   private lastAlert = new Map<string, number>();
   private listenError: string | null = null;
@@ -92,6 +98,14 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   ) {
     super();
     this.settings = new SettingsManager(store);
+    this.owner = new OwnerClient({
+      apiUrl: opts.ownerApiUrl ?? '',
+      store,
+      name: () => this.computerName,
+      platform: process.platform,
+      appVersion: /^\d+\.\d+\.\d+$/.test(opts.appVersion) ? opts.appVersion : '0.0.0',
+      fetchImpl: opts.fetchImpl
+    });
     this.procs = new ProcessCache(opts.platform);
     const launcher = () => {
       const s = this.settings.get();
@@ -133,6 +147,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       identity: opts.identity,
       pairing: this.pairing,
       handlers,
+      ownerLock: () => (this.owner.status.locked && !this.owner.status.admin ? this.owner.status.message : null),
       host: () => ({
         hostId: encodeBase64(opts.identity.publicKey),
         computerName: this.computerName,
@@ -141,6 +156,13 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       })
     });
     this.relay = new RelayClient(opts.identity, (t) => this.server.attach(t));
+    this.owner.on('status', (st) => {
+      if (st.locked) {
+        this.server.disconnectAll(st.message || 'FRISTY Remote has been locked by its owner');
+        this.store.log('security', 'owner', st.reason === 'blocked' ? 'This computer was blocked by the app owner' : 'FRISTY Remote was locked by the app owner');
+      }
+      this.emitState();
+    });
 
     this.server.on('pairing-request', (p) => {
       this.emit('pairing-request', p);
@@ -179,6 +201,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       void this.games.rescan().catch(() => undefined);
     }
     this.games.startTracking();
+    this.owner.start();
     await this.applySettings(this.settings.get(), ['remoteEnabled', 'relayEnabled']);
     this.statsTimer = setInterval(() => void this.statsTick(), STATS_INTERVAL_MS);
     this.statsTimer.unref();
@@ -191,6 +214,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
     this.games.stopTracking();
     this.discovery?.stop();
     this.relay.stop();
+    this.owner.stop();
     this.files.dispose();
     await this.server.dispose();
     this.store.close();
@@ -337,7 +361,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       sessions: this.server.sessionsInfo(),
       pending: this.server.pendingPairings(),
       pairing: this.pairingView(),
-      relay: { status: this.relay.status, error: this.relay.lastError }
+      relay: { status: this.relay.status, error: this.relay.lastError },
+      owner: this.owner.status
     };
   }
 

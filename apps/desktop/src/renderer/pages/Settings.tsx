@@ -83,6 +83,7 @@ export function Settings({ state }: { state: CoreState }) {
 
         <LauncherCard s={s} set={set} />
         <Diagnostics />
+        {state.owner?.enabled && <OwnerKey admin={state.owner.admin} />}
       </div>
     </div>
   );
@@ -176,5 +177,44 @@ function Diagnostics() {
       )}
       <ErrorNote>{act.error}</ErrorNote>
     </Card>
+  );
+}
+
+/** Small, unobtrusive admin entry: the code is verified by the owner service, never in the app. */
+function OwnerKey({ admin }: { admin: boolean }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const act = useAction();
+  const [ok, setOk] = useState(false);
+  return (
+    <div className="flex items-center justify-end gap-2 text-xs text-faint lg:col-span-2">
+      {admin && <span className="rounded-full bg-accent/15 px-2 py-0.5 font-semibold text-accent">{t('owner.adminActive')}</span>}
+      <button aria-label={t('owner.code')} className="rounded-lg p-1.5 opacity-40 hover:opacity-100" onClick={() => setOpen((v) => !v)}>
+        🔑
+      </button>
+      {open && (
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void act.run(() => invoke('owner.login', { code })).then((r) => {
+              setCode('');
+              if (r !== undefined) {
+                setOk(true);
+                setOpen(false);
+              }
+            });
+          }}
+        >
+          <input type="password" autoComplete="off" className={`${inputClass} h-8 w-44`} placeholder={t('owner.code')} value={code} onChange={(e) => setCode(e.target.value)} />
+          <Button className="h-8" busy={act.busy} disabled={!code}>
+            {t('owner.enter')}
+          </Button>
+        </form>
+      )}
+      {act.error && <span className="text-bad">{act.error}</span>}
+      {ok && <span className="text-ok">{t('owner.adminOk')}</span>}
+    </div>
   );
 }

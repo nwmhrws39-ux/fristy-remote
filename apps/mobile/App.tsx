@@ -1,5 +1,5 @@
 import './src/store/secure'; // installs the secure RNG before any crypto runs
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -22,10 +22,13 @@ import { AudioScreen } from './src/screens/AudioScreen';
 import { FilesScreen } from './src/screens/FilesScreen';
 import { MacrosScreen } from './src/screens/MacrosScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { AdminScreen } from './src/screens/AdminScreen';
+import { ownerEnabled, startOwner } from './src/admin/owner';
+import { LockScreen, OwnerBanners, WelcomeName, useOwner } from './src/admin/OwnerUi';
 import { ScreenScreen } from './src/screens/ScreenScreen';
 import { ToolsScreen } from './src/screens/ToolsScreen';
 
-type Tab = 'dashboard' | 'games' | 'input' | 'screen' | 'power' | 'more' | 'apps' | 'audio' | 'files' | 'macros' | 'tools' | 'settings';
+type Tab = 'dashboard' | 'games' | 'input' | 'screen' | 'power' | 'more' | 'apps' | 'audio' | 'files' | 'macros' | 'tools' | 'settings' | 'admin';
 
 const MAIN_TABS: { id: Tab; icon: LucideIcon; label: StringKey }[] = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'nav.dashboard' },
@@ -56,7 +59,13 @@ export default function App() {
 }
 
 function Root() {
-  const { c, prefs, ready } = useApp();
+  const { c, prefs, ready, setPrefs } = useApp();
+  const owner = useOwner();
+  const nameRef = useRef(prefs.userName);
+  nameRef.current = prefs.userName;
+  useEffect(() => {
+    if (ready) void startOwner(() => nameRef.current);
+  }, [ready]);
   const [hosts, setHosts] = useState<PairedHost[] | null>(null);
   const [pairing, setPairing] = useState(false);
 
@@ -88,6 +97,16 @@ function Root() {
       </View>
     );
   }
+
+  // Owner service: ask for a name once (with a clear notice), and honour the owner's lock.
+  if (ownerEnabled && !prefs.userName) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg }}>
+        <WelcomeName onDone={(name) => setPrefs({ userName: name })} />
+      </View>
+    );
+  }
+  if (ownerEnabled && owner.locked && !owner.admin) return <LockScreen />;
 
   const content =
     pairing || hosts.length === 0 ? (
@@ -141,7 +160,9 @@ function Main({ onAddComputer, onHostsChanged }: { onAddComputer: () => void; on
       case 'macros':
         return <MacrosScreen />;
       case 'settings':
-        return <SettingsScreen onAddComputer={onAddComputer} onHostsChanged={onHostsChanged} />;
+        return <SettingsScreen onAddComputer={onAddComputer} onHostsChanged={onHostsChanged} onOpenAdmin={() => setTab('admin')} />;
+      case 'admin':
+        return <AdminScreen onSignedOut={() => setTab('settings')} />;
       case 'more':
         return (
           <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
@@ -175,6 +196,7 @@ function Main({ onAddComputer, onHostsChanged }: { onAddComputer: () => void; on
         </Pressable>
       </View>
 
+      <OwnerBanners />
       {conn.status === 'unauthorized' ? (
         <View style={{ flex: 1, padding: spacing.xl, justifyContent: 'center', gap: spacing.md }}>
           <Text style={{ color: c.text, fontSize: font.h1, fontWeight: '800', textAlign: 'center' }}>{t('notif.unauthorized')}</Text>

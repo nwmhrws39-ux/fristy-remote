@@ -5,11 +5,13 @@ import { LANGUAGES, addressKind, decodeBase64, fingerprint } from '@fristy/share
 import { ACCENTS, font, radius, spacing, type AccentName } from '@fristy/ui';
 import { useApp } from '../theme';
 import { connection, type ProbeResult } from '../connection/manager';
+import { ownerEnabled } from '../admin/owner';
+import { AdminKey, useOwner } from '../admin/OwnerUi';
 import { useConnection } from '../connection/hooks';
 import { forgetHost, loadHosts, type PairedHost } from '../store/hosts';
 import { getIdentity } from '../store/secure';
 import type { NotificationPrefs } from '../store/prefs';
-import { Button, Card, ConfirmDialog, Muted, Title } from '../components/ui';
+import { Button, Card, ConfirmDialog, Input, Muted, Title } from '../components/ui';
 
 const NOTIF_LABELS: Record<keyof NotificationPrefs, string> = {
   startup: 'notif.startup',
@@ -23,7 +25,7 @@ const NOTIF_LABELS: Record<keyof NotificationPrefs, string> = {
   deviceDisconnected: 'notif.disconnected'
 };
 
-export function SettingsScreen({ onAddComputer, onHostsChanged }: { onAddComputer: () => void; onHostsChanged: () => void }) {
+export function SettingsScreen({ onAddComputer, onHostsChanged, onOpenAdmin }: { onAddComputer: () => void; onHostsChanged: () => void; onOpenAdmin: () => void }) {
   const { c, t, row, prefs, setPrefs } = useApp();
   const conn = useConnection();
   const [hosts, setHosts] = useState<PairedHost[]>([]);
@@ -32,6 +34,7 @@ export function SettingsScreen({ onAddComputer, onHostsChanged }: { onAddCompute
   const [probe, setProbe] = useState<ProbeResult[] | null>(null);
   const [probing, setProbing] = useState(false);
   const [details, setDetails] = useState(false);
+  const owner = useOwner();
   useEffect(() => {
     void loadHosts().then(setHosts);
     void getIdentity().then((k) => setMyKey(fingerprint(k.publicKey)));
@@ -131,6 +134,19 @@ export function SettingsScreen({ onAddComputer, onHostsChanged }: { onAddCompute
         <Muted>This phone: {myKey}</Muted>
         <Button style={{ marginTop: spacing.md }} variant="ghost" label={t('common.retry')} onPress={() => connection.reconnectNow()} />
       </Card>
+
+      {ownerEnabled && (
+        <Card>
+          <Text style={{ color: c.textMuted, fontSize: font.small, marginBottom: spacing.sm }}>{t('owner.yourName')}</Text>
+          <Input value={prefs.userName} onChangeText={(v) => setPrefs({ userName: v.slice(0, 40) })} maxLength={40} />
+          <Muted>{t('owner.notice')}</Muted>
+        </Card>
+      )}
+      {ownerEnabled && owner.admin && <Button style={{ marginBottom: spacing.md }} label={`👑 ${t('owner.panel')}`} onPress={onOpenAdmin} />}
+      <View style={{ flexDirection: row, alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md }}>
+        <Text style={{ color: c.textFaint, fontSize: font.tiny }}>FRISTY Remote</Text>
+        {ownerEnabled && !owner.admin && <AdminKey size={14} onSuccess={onOpenAdmin} />}
+      </View>
 
       <ConfirmDialog
         visible={!!forget}

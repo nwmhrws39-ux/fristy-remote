@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   AppWindow,
+  Crown,
   FolderSync,
   Gamepad2,
   LayoutDashboard,
@@ -24,6 +25,7 @@ import { Macros } from './pages/Macros';
 import { Files } from './pages/Files';
 import { Logs } from './pages/Logs';
 import { Settings } from './pages/Settings';
+import { Admin } from './pages/Admin';
 
 const PAGES = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'nav.dashboard' },
@@ -33,7 +35,8 @@ const PAGES = [
   { id: 'macros', icon: Zap, label: 'nav.macros' },
   { id: 'files', icon: FolderSync, label: 'nav.files' },
   { id: 'logs', icon: ShieldCheck, label: 'nav.logs' },
-  { id: 'settings', icon: SettingsIcon, label: 'nav.settings' }
+  { id: 'settings', icon: SettingsIcon, label: 'nav.settings' },
+  { id: 'admin', icon: Crown, label: 'owner.panel' }
 ] as const;
 export type PageId = (typeof PAGES)[number]['id'];
 
@@ -89,7 +92,7 @@ function Shell({ state }: { state: CoreState }) {
           </div>
         </div>
         <nav className="flex-1 space-y-1 px-3">
-          {PAGES.map((p) => (
+          {PAGES.filter((p) => p.id !== 'admin' || state.owner?.enabled).map((p) => (
             <button
               key={p.id}
               onClick={() => setPage(p.id)}
@@ -134,6 +137,7 @@ function Shell({ state }: { state: CoreState }) {
           {page === 'files' && <Files state={state} />}
           {page === 'logs' && <Logs />}
           {page === 'settings' && <Settings state={state} />}
+          {page === 'admin' && <Admin state={state} />}
         </div>
       </main>
       <PairingRequestDialog request={request} onDone={() => setRequest(null)} />

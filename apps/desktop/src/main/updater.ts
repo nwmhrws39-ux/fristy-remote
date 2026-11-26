@@ -49,7 +49,9 @@ export class Updater extends EventEmitter<{ state: [UpdateState] }> {
     autoUpdater.on('update-downloaded', (i) => this.set({ status: 'ready', current, version: i.version }));
     autoUpdater.on('error', (e) => {
       // Offline or no releases yet: keep working, just report it.
-      if (!this.required) this.set({ status: 'error', current, error: (e?.message ?? 'update check failed').slice(0, 200) });
+      const msg = e?.message ?? 'update check failed';
+      const friendly = /404|Cannot find channel/i.test(msg) ? 'No update has been published yet.' : msg.split('\n')[0]!.slice(0, 200);
+      if (!this.required) this.set({ status: 'error', current, error: friendly });
     });
     this.set({ status: 'idle', current });
     void this.check();

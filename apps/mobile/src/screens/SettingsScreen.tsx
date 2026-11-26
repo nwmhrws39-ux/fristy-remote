@@ -51,6 +51,15 @@ export function SettingsScreen({ onAddComputer, onHostsChanged, onOpenAdmin }: {
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }}>
       <Title>{t('nav.settings')}</Title>
+      {ownerEnabled && (
+        <Card title={`👑 ${t('owner.panel')}`}>
+          {owner.admin ? (
+            <Button label={t('owner.panel')} onPress={onOpenAdmin} />
+          ) : (
+            <AdminKey label={t('owner.code')} onSuccess={onOpenAdmin} />
+          )}
+        </Card>
+      )}
 
       <Card title={t('devices.title')} right={<Pressable onPress={onAddComputer} accessibilityLabel={t('pair.title')}><Plus color={c.accent} size={22} /></Pressable>}>
         {hosts.map((h) => (
@@ -143,10 +152,8 @@ export function SettingsScreen({ onAddComputer, onHostsChanged, onOpenAdmin }: {
           <Muted>{t('owner.notice')}</Muted>
         </Card>
       )}
-      {ownerEnabled && owner.admin && <Button style={{ marginBottom: spacing.md }} label={`👑 ${t('owner.panel')}`} onPress={onOpenAdmin} />}
-      <View style={{ flexDirection: row, alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md }}>
+      <View style={{ alignItems: 'center', marginTop: spacing.md }}>
         <Text style={{ color: c.textFaint, fontSize: font.tiny }}>FRISTY Remote v{currentVersion()}</Text>
-        {ownerEnabled && !owner.admin && <AdminKey size={14} onSuccess={onOpenAdmin} />}
       </View>
 
       <ConfirmDialog

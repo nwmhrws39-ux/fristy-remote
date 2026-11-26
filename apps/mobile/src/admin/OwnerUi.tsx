@@ -13,7 +13,7 @@ export function useOwner() {
 }
 
 /** Small, unobtrusive key button → code dialog. The code is verified by the owner service only. */
-export function AdminKey({ onSuccess, size = 16 }: { onSuccess?: () => void; size?: number }) {
+export function AdminKey({ onSuccess, size = 16, label }: { onSuccess?: () => void; size?: number; label?: string }) {
   const { c, t } = useApp();
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
@@ -21,9 +21,13 @@ export function AdminKey({ onSuccess, size = 16 }: { onSuccess?: () => void; siz
   const [error, setError] = useState<string | null>(null);
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} hitSlop={12} accessibilityLabel={t('owner.code')} style={{ opacity: 0.35, padding: 6 }}>
-        <KeyRound color={c.textFaint} size={size} />
-      </Pressable>
+      {label ? (
+        <Button label={label} icon={<KeyRound color="#fff" size={16} />} onPress={() => setOpen(true)} />
+      ) : (
+        <Pressable onPress={() => setOpen(true)} hitSlop={12} accessibilityLabel={t('owner.code')} style={{ opacity: 0.35, padding: 6 }}>
+          <KeyRound color={c.textFaint} size={size} />
+        </Pressable>
+      )}
       <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={{ flex: 1, backgroundColor: '#000b', justifyContent: 'center', padding: spacing.xl }}>
           <View style={{ backgroundColor: c.bgElevated, borderRadius: radius.xl, padding: spacing.xl, borderWidth: 1, borderColor: c.cardBorder, gap: spacing.md }}>

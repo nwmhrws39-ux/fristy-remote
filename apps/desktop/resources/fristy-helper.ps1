@@ -153,15 +153,21 @@ namespace Fristy
 
         [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
 
-        /// Wakes the display: signal display activity, ask monitors to power on, and nudge the mouse
-        /// (the most reliable trigger on modern Windows).
+        /// Wakes the screens the way a user would: move the mouse a little (and back),
+        /// plus F15 – a key no app uses – for displays that only react to keyboard input.
         public static void MonitorOn()
         {
             SetThreadExecutionState(0x00000002 | 0x00000001); // ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED
-            PostMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)(-1));
-            Input.Move(1, 0);
-            Input.Move(-1, 0);
+            for (int i = 0; i < 3; i++)
+            {
+                Input.Move(12, 8);
+                System.Threading.Thread.Sleep(40);
+                Input.Move(-12, -8);
+                System.Threading.Thread.Sleep(40);
+            }
+            Input.Combo(new int[0], 0x7E); // VK_F15
         }
+
         public static void Sleep() { if (!SetSuspendState(false, false, false)) throw new Exception("Sleep is not available on this computer"); }
         public static void Hibernate() { if (!SetSuspendState(true, false, false)) throw new Exception("Hibernate is disabled or not supported (enable with 'powercfg /hibernate on' as administrator)"); }
     }
@@ -557,29 +563,35 @@ function Invoke-AwaitWinRt($op, [Type]$resultType) {
 
 function Invoke-Speak([string]$text) {
     $hebrew = $text -match '[\u0590-\u05FF]'
+    $winrtError = $null
     try {
-        [void][Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType = WindowsRuntime]
-        [void][Windows.Media.SpeechSynthesis.SpeechSynthesisStream, Windows.Media.SpeechSynthesis, ContentType = WindowsRuntime]
+        $null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer,Windows.Media.SpeechSynthesis,ContentType=WindowsRuntime]
+        $null = [Windows.Media.SpeechSynthesis.SpeechSynthesisStream,Windows.Media.SpeechSynthesis,ContentType=WindowsRuntime]
         $synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
-        $voices = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices
         if ($hebrew) {
-            $voice = $voices | Where-Object { $_.Language -like 'he*' } | Select-Object -First 1
+            $voice = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices | Where-Object { $_.Language -like 'he*' } | Select-Object -First 1
             if ($null -eq $voice) {
-                throw 'No Hebrew voice installed. Windows Settings > Time & language > Speech > Add voices > Hebrew.'
+                throw 'No Hebrew voice is installed on this PC. Windows Settings > Time & language > Speech > Add voices > Hebrew, then try again.'
             }
             $synth.Voice = $voice
         }
         $stream = Invoke-AwaitWinRt ($synth.SynthesizeTextToStreamAsync($text)) ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
-        $net = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($stream)
+        if ($null -eq $stream) { throw 'speech synthesis returned nothing' }
+        # Copy into a seekable in-memory WAV that SoundPlayer can read reliably.
+        $src = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($stream)
+        $mem = New-Object System.IO.MemoryStream
+        $src.CopyTo($mem)
+        $mem.Position = 0
         if ($null -ne $script:player) { $script:player.Stop() }
-        $script:player = New-Object System.Media.SoundPlayer($net)
+        $script:player = New-Object System.Media.SoundPlayer($mem)
         $script:player.Play()
         return
     }
     catch {
-        if ($hebrew) { throw }
+        $winrtError = $_.Exception.Message
+        if ($hebrew) { throw $winrtError }
     }
-    # Fallback: classic SAPI voices (usually English only).
+    # Fallback for non-Hebrew text: classic SAPI voices.
     if ($null -eq $script:speech) {
         Add-Type -AssemblyName System.Speech
         $script:speech = New-Object System.Speech.Synthesis.SpeechSynthesizer

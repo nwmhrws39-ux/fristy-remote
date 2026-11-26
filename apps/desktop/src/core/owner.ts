@@ -29,6 +29,26 @@ export interface OwnerOptions {
   appVersion: string;
   fetchImpl?: typeof fetch;
   intervalMs?: number;
+  /** where the admin token is kept (OS-encrypted in the app); in-memory when omitted */
+  tokenStore?: { get(): string | null; set(token: string | null): void };
+}
+
+export interface AdminOverview {
+  config: { locked: boolean; lockMessage: string; announcement: string; minVersion: string };
+  you: string;
+  installs: {
+    id: string;
+    name: string;
+    kind: 'phone' | 'pc';
+    platform: string;
+    appVersion: string;
+    country: string | null;
+    firstSeen: number;
+    lastSeen: number;
+    online: boolean;
+    blocked: boolean;
+    admin: boolean;
+  }[];
 }
 
 const DISABLED: OwnerStatus = { enabled: false, locked: false, reason: null, message: '', announcement: '', updateAvailable: false, admin: false, lastCheck: null };
@@ -37,6 +57,7 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
   status: OwnerStatus;
   private timer: NodeJS.Timeout | null = null;
   private readonly fetchImpl: typeof fetch;
+  private memToken: string | null = null;
 
   constructor(private readonly opts: OwnerOptions) {
     super();
@@ -118,9 +139,55 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
       body: JSON.stringify({ installId: this.installId, code }),
       signal: AbortSignal.timeout(10_000)
     });
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    const body = (await res.json().catch(() => ({}))) as { error?: string; token?: string };
     if (!res.ok) throw new Error(body.error ?? `error ${res.status}`);
+    if (body.token) this.setToken(body.token);
     await this.checkIn();
+  }
+
+  hasToken(): boolean {
+    return !!this.getToken();
+  }
+
+  private getToken(): string | null {
+    return this.opts.tokenStore ? this.opts.tokenStore.get() : this.memToken;
+  }
+
+  private setToken(t: string | null) {
+    if (this.opts.tokenStore) this.opts.tokenStore.set(t);
+    else this.memToken = t;
+  }
+
+  private async admin<T>(method: 'GET' | 'POST', p: string, body?: unknown): Promise<T> {
+    const token = this.getToken();
+    if (!token) throw new Error('not signed in as admin');
+    const res = await this.fetchImpl(this.url(p), {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(10_000)
+    });
+    const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+    if (res.status === 401) this.setToken(null);
+    if (!res.ok) throw new Error(json.error ?? `error ${res.status}`);
+    return json;
+  }
+
+  overview() {
+    return this.admin<AdminOverview>('GET', '/v1/admin/overview');
+  }
+
+  setConfig(c: Partial<AdminOverview['config']>) {
+    return this.admin<{ config: AdminOverview['config'] }>('POST', '/v1/admin/config', c);
+  }
+
+  updateInstall(installId: string, patch: { blocked?: boolean }) {
+    return this.admin<{ ok: true }>('POST', '/v1/admin/install', { installId, ...patch });
+  }
+
+  async logout() {
+    await this.admin('POST', '/v1/admin/logout', {}).catch(() => undefined);
+    this.setToken(null);
   }
 
   private update(s: OwnerStatus) {

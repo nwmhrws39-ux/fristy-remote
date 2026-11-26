@@ -289,8 +289,8 @@ export const METHODS = {
     params: z
       .object({
         displayId: z.string().min(1).max(64),
-        maxWidth: z.number().int().min(320).max(2560),
-        quality: z.number().int().min(20).max(90)
+        maxWidth: z.number().int().min(320).max(3840),
+        quality: z.number().int().min(20).max(95)
       })
       .strict()
   },

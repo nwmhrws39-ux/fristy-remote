@@ -67,6 +67,18 @@ export const IPC = {
   'app.info': none,
   'owner.login': z.object({ code: z.string().min(1).max(128) }).strict(),
   'owner.refresh': none,
+  'owner.overview': none,
+  'owner.hasToken': none,
+  'owner.config': z
+    .object({
+      locked: z.boolean().optional(),
+      lockMessage: z.string().max(300).optional(),
+      announcement: z.string().max(500).optional(),
+      minVersion: z.string().regex(/^(\d+\.\d+\.\d+)?$/).optional()
+    })
+    .strict(),
+  'owner.install': z.object({ installId: z.string().min(1).max(80), blocked: z.boolean() }).strict(),
+  'owner.logout': none,
   'update.state': none,
   'update.check': none,
   'update.install': none,

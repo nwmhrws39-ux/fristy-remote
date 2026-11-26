@@ -20,12 +20,12 @@ export function ScreenScreen() {
   const win = useWindowDimensions();
   const can = useCan('screen');
   const canInput = useCan('input') && (conn.accepted?.host.inputEnabled ?? false);
-  const [quality, setQuality] = useState<Quality>('high');
+  const [quality, setQuality] = useState<Quality>('auto');
   const [full, setFull] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const keyboard = useRef<ComponentRef<typeof TextInput>>(null);
   const { displays, displayId, setDisplayId, error: dispError } = useDisplays(can);
-  const { frame, fps, error } = useScreenStream(can, displayId, quality);
+  const { frame, fps, error, level } = useScreenStream(can, displayId, quality);
   const cursor = useCursor(can, displayId);
 
   const click = useCallback(
@@ -45,7 +45,7 @@ export function ScreenScreen() {
     try {
       const perm = await MediaLibrary.requestPermissionsAsync(true);
       if (!perm.granted) return setNote('Photos permission denied');
-      const f = await connection.call('screen.frame', { displayId, maxWidth: 2560, quality: 90 }, 30_000);
+      const f = await connection.call('screen.frame', { displayId, maxWidth: 3840, quality: 95 }, 30_000);
       const file = new File(Paths.cache, `fristy-${Date.now()}.jpg`);
       file.create();
       file.write(decodeBase64(f.data));
@@ -94,7 +94,7 @@ export function ScreenScreen() {
     <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="always">
       <View style={{ flexDirection: row, justifyContent: 'space-between', alignItems: 'center' }}>
         <Title>{t('screen.title')}</Title>
-        <Text style={{ color: c.textFaint, fontSize: font.tiny }}>{frame ? `${fps.toFixed(1)} fps · ${frame.w}×${frame.h}` : ''}</Text>
+        <Text style={{ color: c.textFaint, fontSize: font.tiny }}>{frame ? `${fps.toFixed(1)} fps · ${frame.w}×${frame.h}${quality === 'auto' ? ` · ${t(`screen.${level}`)}` : ''}` : ''}</Text>
       </View>
       {err && /disabled/i.test(err) ? <ErrorText>{t('screen.disabled')}</ErrorText> : <ErrorText>{err}</ErrorText>}
 

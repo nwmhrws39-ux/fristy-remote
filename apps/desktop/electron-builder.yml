@@ -21,14 +21,14 @@ extraResources:
   - from: ../../README.md
     to: docs/README.md
 asar: true
-# Updates come from the public binaries-only repository (docs/UPDATES.md).
+# Updates are published as GitHub Releases of this (public) repository (docs/UPDATES.md).
 # The first entry is what the installed app reads; the second uploads releases.
 publish:
   - provider: generic
-    url: https://github.com/nwmhrws39-ux/fristy-remote-releases/releases/latest/download
+    url: https://github.com/nwmhrws39-ux/fristy-remote/releases/latest/download
   - provider: github
     owner: nwmhrws39-ux
-    repo: fristy-remote-releases
+    repo: fristy-remote
     releaseType: release
 npmRebuild: false
 win:

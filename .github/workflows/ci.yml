@@ -37,6 +37,8 @@ jobs:
     name: Windows installer (NSIS .exe)
     needs: test
     runs-on: windows-latest
+    permissions:
+      contents: write # publish the update as a GitHub Release
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,14 +54,13 @@ jobs:
         run: |
           npm run build -w @fristy/desktop
           cd apps/desktop
-          if [ -n "$GH_TOKEN" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             npx electron-builder --win --x64 --publish always
           else
             npx electron-builder --win --x64 --publish never
           fi
         env:
-          # Fine-grained token with Contents: read & write on <owner>/fristy-remote-releases
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FRISTY_ADMIN_API_URL: ${{ vars.ADMIN_API_URL }}
           # Optional code signing (recommended to avoid SmartScreen warnings):
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}

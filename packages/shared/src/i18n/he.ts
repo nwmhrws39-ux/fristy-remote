@@ -187,6 +187,7 @@ export const he: Record<StringKey, string> = {
   'screen.title': 'מסך',
   'screen.disabled': 'צפייה במסך כבויה במחשב. הפעל "אפשר צפייה במסך" בהגדרות FRISTY Remote.',
   'screen.quality': 'איכות',
+  'screen.auto': 'אוטומטי',
   'screen.low': 'נמוכה',
   'screen.medium': 'בינונית',
   'screen.high': 'גבוהה',

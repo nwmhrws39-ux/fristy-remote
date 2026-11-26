@@ -132,3 +132,17 @@ describe('launcher parsers', () => {
     expect([...m.values()][0]).toEqual({ InstallDir: 'C:/Games/Ubisoft/Far Cry 3/' });
   });
 });
+
+describe('native helper script', () => {
+  it('every operation maps to an existing C# method and braces are balanced', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const s = fs.readFileSync(path.join(__dirname, '..', 'resources', 'fristy-helper.ps1'), 'utf8');
+    const cs = s.slice(s.indexOf("$source = @'") + 12, s.indexOf("'@\n"));
+    expect(cs.split('{').length).toBe(cs.split('}').length);
+    const ops = [...s.matchAll(/\[Fristy\.(\w+)\]::(\w+)\(/g)].map((m) => m[2]!);
+    expect(ops.length).toBeGreaterThan(15);
+    for (const m of ops) expect(new RegExp(`public static \\S+(?:<[^>]+>)? ${m}\\(`).test(cs), m).toBe(true);
+    for (const op of ['lock', 'monitorOff', 'monitorOn', 'sleep', 'hibernate', 'speak', 'moveTo']) expect(s).toContain(`'${op}'`);
+  });
+});

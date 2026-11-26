@@ -411,6 +411,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
 
   private contextFor(s: Session): HandlerContext {
     return {
+      transport: s.transport.kind,
       deviceId: s.device.id,
       deviceName: s.device.name,
       permissions: s.device.permissions,
@@ -549,6 +550,8 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
 }
 
 export interface HandlerContext {
+  /** 'relay' when the phone is connected through the internet relay */
+  transport: 'lan' | 'relay';
   deviceId: string;
   deviceName: string;
   permissions: readonly Permission[];

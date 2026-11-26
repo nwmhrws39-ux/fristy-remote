@@ -245,6 +245,16 @@ app.whenReady().then(async () => {
     sqlWasmPath: path.join(__dirname, 'sql-wasm.wasm'),
     desktop: desktopBridge,
     ownerApiUrl: process.env.FRISTY_ADMIN_API_URL || DEFAULT_ADMIN_API_URL,
+    ownerTokenStore: {
+      get: () => secrets.get('owner-token'),
+      set: (t) => {
+        try {
+          secrets.set('owner-token', t);
+        } catch {
+          /* OS encryption unavailable – stay signed out */
+        }
+      }
+    },
     launcherToken: () => secrets.get('launcher-token'),
     iconFor: async (exe) => {
       try {

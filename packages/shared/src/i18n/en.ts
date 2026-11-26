@@ -185,6 +185,7 @@ export const en = {
   'screen.title': 'Screen',
   'screen.disabled': 'Screen viewing is turned off on the PC. Enable "Allow screen viewing" in FRISTY Remote settings.',
   'screen.quality': 'Quality',
+  'screen.auto': 'Auto',
   'screen.low': 'Low',
   'screen.medium': 'Medium',
   'screen.high': 'High',

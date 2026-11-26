@@ -192,7 +192,7 @@ export function TouchpadScreen() {
   const [showScreen, setShowScreen] = useState(false);
   const preview = showScreen && canScreen;
   const { displayId } = useDisplays(preview);
-  const { frame, error: screenError } = useScreenStream(preview, displayId, 'medium');
+  const { frame, error: screenError } = useScreenStream(preview, displayId, 'auto');
   const cursor = useCursor(preview, displayId);
 
   if (conn.status === 'online' && !can) return <View style={{ padding: spacing.lg }}><Title>{t('nav.input')}</Title><NotAllowed permission="input" /></View>;

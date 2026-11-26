@@ -39,6 +39,7 @@ export interface CoreOptions {
   /** optional owner service URL (apps/admin-server); empty = disabled */
   ownerApiUrl?: string;
   fetchImpl?: typeof fetch;
+  ownerTokenStore?: { get(): string | null; set(token: string | null): void };
 }
 
 export interface PairingView {
@@ -106,7 +107,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       name: () => this.computerName,
       platform: process.platform,
       appVersion: /^\d+\.\d+\.\d+$/.test(opts.appVersion) ? opts.appVersion : '0.0.0',
-      fetchImpl: opts.fetchImpl
+      fetchImpl: opts.fetchImpl,
+      tokenStore: opts.ownerTokenStore
     });
     this.procs = new ProcessCache(opts.platform);
     const launcher = () => {
@@ -141,6 +143,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       procs: this.procs,
       stats: () => this.stats(),
       desktop: opts.desktop,
+      log: (level, category, message) => store.log(level, category, message),
       broadcast: (e, d, p) => this.server.broadcast(e, d, p ?? null)
     });
     this.server = new ControlServer({

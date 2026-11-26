@@ -7,12 +7,16 @@ import { useConnection } from '../connection/hooks';
 import { useApp } from '../theme';
 
 export const QUALITY = {
-  low: { maxWidth: 960, quality: 50 },
-  medium: { maxWidth: 1440, quality: 65 },
-  high: { maxWidth: 1920, quality: 78 },
-  max: { maxWidth: 2560, quality: 88 }
+  auto: { maxWidth: 0, quality: 0 }, // adaptive – see useScreenStream
+  low: { maxWidth: 1024, quality: 60 },
+  medium: { maxWidth: 1600, quality: 74 },
+  high: { maxWidth: 2048, quality: 84 },
+  max: { maxWidth: 2560, quality: 92 }
 } as const;
 export type Quality = keyof typeof QUALITY;
+
+/** Steps the adaptive mode moves between (lowest → highest). */
+const LADDER: Exclude<Quality, 'auto'>[] = ['low', 'medium', 'high', 'max'];
 
 export function useDisplays(enabled: boolean) {
   const { status } = useConnection();
@@ -34,41 +38,67 @@ export function useDisplays(enabled: boolean) {
 }
 
 /**
- * Pulls frames one at a time: the next request starts as soon as the previous
- * frame arrived, so the frame rate adapts to the connection automatically.
+ * Pulls frames with two requests in flight, so the next frame is already on its
+ * way while the current one is shown (hides the network round trip). In
+ * "auto" quality the resolution/quality climbs while frames arrive quickly and
+ * drops when the connection gets slow.
  */
 export function useScreenStream(enabled: boolean, displayId: string | null, quality: Quality) {
   const { status } = useConnection();
   const [frame, setFrame] = useState<ScreenFrame | null>(null);
   const [fps, setFps] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [level, setLevel] = useState<Exclude<Quality, 'auto'>>('high');
   useEffect(() => {
     if (!enabled || !displayId || status !== 'online') return;
     let alive = true;
+    let latest = 0;
+    let step = LADDER.indexOf('high');
     const times: number[] = [];
-    void (async () => {
+    const durations: number[] = [];
+    const preset = () => (quality === 'auto' ? QUALITY[LADDER[step]!] : QUALITY[quality]);
+    const adapt = (ms: number) => {
+      if (quality !== 'auto') return;
+      durations.push(ms);
+      if (durations.length < 6) return;
+      const avg = durations.reduce((a, b) => a + b, 0) / durations.length;
+      durations.length = 0;
+      if (avg > 450 && step > 0) step--;
+      else if (avg < 160 && step < LADDER.length - 1) step++;
+      else return;
+      setLevel(LADDER[step]!);
+    };
+    const worker = async () => {
       while (alive) {
+        const started = Date.now();
         try {
-          const f = await connection.call('screen.frame', { displayId, ...QUALITY[quality] }, 20_000);
+          const f = await connection.call('screen.frame', { displayId, ...preset() }, 20_000);
           if (!alive) break;
-          setFrame(f);
-          setError(null);
-          const now = Date.now();
-          times.push(now);
-          while (times.length && now - times[0]! > 3000) times.shift();
-          setFps(times.length / 3);
+          adapt(Date.now() - started);
+          if (f.ts > latest) {
+            latest = f.ts;
+            setFrame(f);
+            setError(null);
+            const now = Date.now();
+            times.push(now);
+            while (times.length && now - times[0]! > 3000) times.shift();
+            setFps(times.length / 3);
+          }
         } catch (e) {
           if (!alive) break;
           setError((e as Error).message);
           await new Promise((r) => setTimeout(r, 1500));
         }
       }
-    })();
+    };
+    void worker();
+    const second = setTimeout(() => void worker(), 120);
     return () => {
       alive = false;
+      clearTimeout(second);
     };
   }, [enabled, displayId, quality, status]);
-  return { frame, fps, error };
+  return { frame, fps, error, level: quality === 'auto' ? level : quality };
 }
 
 /** Fast cursor-only updates (no image), so the pointer moves smoothly between frames. */

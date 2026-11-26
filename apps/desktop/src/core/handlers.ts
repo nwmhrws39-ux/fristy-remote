@@ -26,6 +26,7 @@ export interface HandlerDeps {
   macros: MacroService;
   procs: ProcessCache;
   stats(): Promise<SystemStats>;
+  log?: (level: 'info' | 'warn', category: string, message: string) => void;
   /** Electron-only capabilities; absent in plain Node (tests / headless) → "unsupported" */
   desktop?: DesktopBridge;
   broadcast<E extends EventName>(event: E, data: ServerEvents[E], permission?: 'power' | 'monitor' | null): void;
@@ -208,11 +209,11 @@ export function createHandlers(d: HandlerDeps): Handlers {
     methods: {
       ...methods,
       'screen.displays': async () => bridge().displays(),
-      'screen.frame': async (_c, p) => {
+      'screen.frame': async (c, p) => {
         display(p.displayId);
         let frame = await bridge().grab(p.displayId, p.maxWidth, p.quality);
-        // Keep frames comfortably inside transport limits (relay ≈ 1 MB per message).
-        if (frame.data.length > 900_000) frame = await bridge().grab(p.displayId, Math.min(p.maxWidth, 1600), Math.min(p.quality, 55));
+        // The internet relay carries at most ≈1 MB per message; direct connections have no such limit.
+        if (c.transport === 'relay' && frame.data.length > 900_000) frame = await bridge().grab(p.displayId, Math.min(p.maxWidth, 1600), Math.min(p.quality, 60));
         return { ...frame, ts: Date.now() };
       },
       'screen.cursor': async (_c, p) => {
@@ -244,7 +245,9 @@ export function createHandlers(d: HandlerDeps): Handlers {
           return { ok: true, spoken: true, speakError: null };
         } catch (e) {
           // The message was still shown; tell the phone why it was not read aloud (e.g. no Hebrew voice).
-          return { ok: true, spoken: false, speakError: (e as Error).message.slice(0, 200) };
+          const reason = (e as Error).message.slice(0, 200);
+          d.log?.('warn', 'speech', `Read aloud failed: ${reason}`);
+          return { ok: true, spoken: false, speakError: reason };
         }
       }
     } as MethodHandlers,

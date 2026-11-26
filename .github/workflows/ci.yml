@@ -44,9 +44,22 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build installer
-        run: npm run dist -w @fristy/desktop
+      - name: Version
+        shell: bash
+        run: npm pkg set version=0.2.${{ github.run_number }} -w @fristy/desktop
+      - name: Build installer (and publish the update when configured)
+        shell: bash
+        run: |
+          npm run build -w @fristy/desktop
+          cd apps/desktop
+          if [ -n "$GH_TOKEN" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            npx electron-builder --win --x64 --publish always
+          else
+            npx electron-builder --win --x64 --publish never
+          fi
         env:
+          # Fine-grained token with Contents: read & write on <owner>/fristy-remote-releases
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           FRISTY_ADMIN_API_URL: ${{ vars.ADMIN_API_URL }}
           # Optional code signing (recommended to avoid SmartScreen warnings):
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}

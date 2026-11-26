@@ -7,6 +7,7 @@ import { useI18n } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { Button, Card, ErrorNote, Field, Toggle, cx, inputClass } from '../components/ui';
 import type { DiagnosticCheck } from '../../main/diagnostics';
+import { useUpdateState } from '../App';
 
 type S = CoreState['settings'];
 
@@ -81,6 +82,7 @@ export function Settings({ state }: { state: CoreState }) {
           </div>
         </Card>
 
+        <UpdatesCard />
         <LauncherCard s={s} set={set} />
         <Diagnostics />
         {state.owner?.enabled && <OwnerKey admin={state.owner.admin} />}
@@ -216,5 +218,41 @@ function OwnerKey({ admin }: { admin: boolean }) {
       {act.error && <span className="text-bad">{act.error}</span>}
       {ok && <span className="text-ok">{t('owner.adminOk')}</span>}
     </div>
+  );
+}
+
+function UpdatesCard() {
+  const { t } = useI18n();
+  const st = useUpdateState();
+  const text =
+    st.status === 'disabled'
+      ? t('update.devBuild')
+      : st.status === 'checking' || st.status === 'idle'
+        ? t('update.checking')
+        : st.status === 'none'
+          ? t('update.none')
+          : st.status === 'error'
+            ? `${t('update.error')}: ${st.error}`
+            : st.status === 'ready'
+              ? t('update.ready', { v: st.version })
+              : st.status === 'downloading'
+                ? t('update.downloading', { v: st.version, p: st.percent })
+                : t('update.available', { v: (st as { version?: string }).version ?? '' });
+  return (
+    <Card title={t('update.title')}>
+      <p className="text-sm text-muted">
+        {t('update.current')}: <span dir="ltr">{'current' in st ? st.current : '—'}</span>
+      </p>
+      <p className="mt-1 text-sm">{text}</p>
+      <div className="mt-4 flex gap-2">
+        {st.status === 'ready' ? (
+          <Button onClick={() => void invoke('update.install')}>{t('update.now')}</Button>
+        ) : (
+          <Button variant="ghost" disabled={st.status === 'disabled' || st.status === 'checking'} onClick={() => void invoke('update.check')}>
+            {t('update.check')}
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }

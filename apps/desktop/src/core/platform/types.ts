@@ -26,7 +26,7 @@ export interface ScannedGame {
   artworkUrl: string | null;
 }
 
-export type PowerAction = 'shutdown' | 'restart' | 'sleep' | 'hibernate' | 'lock' | 'monitorOff';
+export type PowerAction = 'shutdown' | 'restart' | 'sleep' | 'hibernate' | 'lock' | 'monitorOff' | 'monitorOn';
 
 export interface Platform {
   readonly name: string;

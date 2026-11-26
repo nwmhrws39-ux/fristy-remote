@@ -367,7 +367,7 @@ export class ControlServer extends EventEmitter<ServerEventsMap> {
 
     if (!isMethodName(method)) return fail('unknown_method', 'unknown method');
     const def = METHODS[method];
-    if (!s.limiter.take(s.device.id, method.startsWith('input.') ? 1 : method === 'screen.frame' ? 20 : 5)) return fail('rate_limited', 'slow down');
+    if (!s.limiter.take(s.device.id, method.startsWith('input.') || method === 'screen.cursor' ? 1 : method === 'screen.frame' ? 20 : 5)) return fail('rate_limited', 'slow down');
 
     if (!hasPermission(s.device.permissions, def.permission)) {
       this.deps.store.log('security', 'permission', `Denied ${method} (missing "${def.permission}")`, s.device.id, s.transport.remote);

@@ -52,6 +52,9 @@ export function createWindowsPlatform(helperScript: string, opener: Opener): Pla
         case 'monitorOff':
           await helper.call('monitorOff');
           return;
+        case 'monitorOn':
+          await helper.call('monitorOn');
+          return;
       }
     },
     scheduleShutdown: (action, delaySec) =>
@@ -65,7 +68,7 @@ export function createWindowsPlatform(helperScript: string, opener: Opener): Pla
       await helper.call('moveTo', { x: Math.round(x), y: Math.round(y) });
     },
     async speak(text) {
-      await helper.call('speak', { text });
+      await helper.call('speak', { text }, 20_000);
     },
     async mouseButton(button, action) {
       await helper.call('mouseButton', { button, action });

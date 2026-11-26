@@ -5,7 +5,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
  * it can only call `invoke` with a channel name (validated again in main) and
  * subscribe to a fixed set of events.
  */
-const EVENTS = new Set(['state', 'pairing-request', 'input-activity', 'security']);
+const EVENTS = new Set(['state', 'pairing-request', 'input-activity', 'security', 'update']);
 
 contextBridge.exposeInMainWorld('fristy', {
   invoke: (channel: string, payload?: unknown) => {

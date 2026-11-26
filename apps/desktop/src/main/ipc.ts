@@ -7,10 +7,11 @@ import type { SecretStore } from '../core/identity';
 import { FristyLauncherClient } from '../core/integrations/fristy-launcher';
 import { IPC, type IpcChannel } from './ipc-contract';
 import { runDiagnostics } from './diagnostics';
+import type { Updater } from './updater';
 
 type Handler = (payload: never, win: BrowserWindow | null) => unknown;
 
-export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl: (url: string) => boolean) {
+export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl: (url: string) => boolean, updater: Updater) {
   const handlers: Record<IpcChannel, Handler> = {
     'state.get': () => core.state(),
     'pairing.create': () => core.createPairing(),
@@ -104,6 +105,9 @@ export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl
     },
     'owner.login': (p: { code: string }) => core.owner.login(p.code),
     'owner.refresh': () => core.owner.checkIn(),
+    'update.state': () => updater.state,
+    'update.check': () => updater.check(),
+    'update.install': () => updater.install(),
     'app.info': () => ({ version: app.getVersion(), platform: process.platform, electron: process.versions.electron }),
     'shell.openDocs': (p: { page: 'wol' | 'security' | 'readme' }) => {
       // Documentation ships with the app (extraResources/docs) – no network needed.

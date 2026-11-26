@@ -15,7 +15,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: path.resolve(__dirname, 'src/renderer/index.html'),
-        indicator: path.resolve(__dirname, 'src/renderer/indicator.html')
+        indicator: path.resolve(__dirname, 'src/renderer/indicator.html'),
+        capture: path.resolve(__dirname, 'src/renderer/capture.html')
       }
     }
   }

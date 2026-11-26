@@ -39,6 +39,8 @@ export interface ScreenFrame {
   /** JPEG, base64 */
   data: string;
   ts: number;
+  /** mouse cursor position on this display (0..1), null when it is on another display */
+  cursor?: { x: number; y: number } | null;
 }
 
 /** File types that may be opened on the PC from the phone (never executables or scripts). */
@@ -147,7 +149,7 @@ export const MacroStepSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('setVolume'), level: z.number().int().min(0).max(100) }),
   z.object({ type: z.literal('mute'), muted: z.boolean() }),
   z.object({ type: z.literal('media'), action: z.enum(['playPause', 'next', 'previous', 'stop']) }),
-  z.object({ type: z.literal('power'), action: z.enum(['lock', 'monitorOff', 'sleep']) }),
+  z.object({ type: z.literal('power'), action: z.enum(['lock', 'monitorOff', 'monitorOn', 'sleep']) }),
   z.object({ type: z.literal('wait'), ms: z.number().int().min(0).max(30_000) })
 ]);
 export type MacroStep = z.infer<typeof MacroStepSchema>;
@@ -187,7 +189,7 @@ export const METHODS = {
     permission: 'power',
     params: z
       .object({
-        action: z.enum(['shutdown', 'restart', 'sleep', 'hibernate', 'lock', 'monitorOff']),
+        action: z.enum(['shutdown', 'restart', 'sleep', 'hibernate', 'lock', 'monitorOff', 'monitorOn']),
         confirm: z.boolean().optional()
       })
       .strict()
@@ -292,6 +294,7 @@ export const METHODS = {
       })
       .strict()
   },
+  'screen.cursor': { permission: 'screen', params: z.object({ displayId: z.string().min(1).max(64) }).strict() },
   'input.moveTo': {
     permission: 'input',
     params: z.object({ displayId: z.string().min(1).max(64), x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).strict()
@@ -359,10 +362,11 @@ export interface MethodResults {
   'screen.displays': DisplayInfo[];
   'screen.frame': ScreenFrame;
   'input.moveTo': null;
+  'screen.cursor': { x: number; y: number } | null;
   'clipboard.get': { text: string };
   'clipboard.set': { ok: true };
   'files.open': { ok: true };
-  'system.message': { ok: true };
+  'system.message': { ok: true; spoken: boolean; speakError: string | null };
 }
 
 /* ------------------------------------------------------------------ */

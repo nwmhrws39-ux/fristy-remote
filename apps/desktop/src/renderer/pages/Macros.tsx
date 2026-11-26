@@ -35,7 +35,7 @@ function describe(step: MacroStep, apps: { id: string; name: string }[], games: 
     case 'media':
       return `Media: ${step.action}`;
     case 'power':
-      return { lock: 'Lock computer', monitorOff: 'Turn off monitor', sleep: 'Sleep' }[step.action];
+      return { lock: 'Lock computer', monitorOff: 'Turn off monitor', monitorOn: 'Turn on monitor', sleep: 'Sleep' }[step.action];
     case 'wait':
       return `Wait ${step.ms} ms`;
   }
@@ -240,6 +240,7 @@ function StepFields({ step, apps, games, onChange }: { step: MacroStep; apps: { 
         <select className={cls} value={step.action} onChange={(e) => onChange({ ...step, action: e.target.value as typeof step.action })}>
           <option value="lock">Lock computer</option>
           <option value="monitorOff">Turn off monitor</option>
+          <option value="monitorOn">Turn on monitor</option>
           <option value="sleep">Sleep</option>
         </select>
       );

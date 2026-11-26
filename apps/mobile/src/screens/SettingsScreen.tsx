@@ -6,6 +6,7 @@ import { ACCENTS, font, radius, spacing, type AccentName } from '@fristy/ui';
 import { useApp } from '../theme';
 import { connection, type ProbeResult } from '../connection/manager';
 import { ownerEnabled } from '../admin/owner';
+import { currentVersion } from '../admin/updates';
 import { AdminKey, useOwner } from '../admin/OwnerUi';
 import { useConnection } from '../connection/hooks';
 import { forgetHost, loadHosts, type PairedHost } from '../store/hosts';
@@ -144,7 +145,7 @@ export function SettingsScreen({ onAddComputer, onHostsChanged, onOpenAdmin }: {
       )}
       {ownerEnabled && owner.admin && <Button style={{ marginBottom: spacing.md }} label={`👑 ${t('owner.panel')}`} onPress={onOpenAdmin} />}
       <View style={{ flexDirection: row, alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md }}>
-        <Text style={{ color: c.textFaint, fontSize: font.tiny }}>FRISTY Remote</Text>
+        <Text style={{ color: c.textFaint, fontSize: font.tiny }}>FRISTY Remote v{currentVersion()}</Text>
         {ownerEnabled && !owner.admin && <AdminKey size={14} onSuccess={onOpenAdmin} />}
       </View>
 

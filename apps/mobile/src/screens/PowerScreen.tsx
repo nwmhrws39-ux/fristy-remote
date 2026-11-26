@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { Lock, Moon, MonitorOff, Power, PowerOff, RotateCcw, Snowflake, Sunrise, Timer } from 'lucide-react-native';
+import { Lock, Monitor, Moon, MonitorOff, Power, PowerOff, RotateCcw, Snowflake, Sunrise, Timer } from 'lucide-react-native';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
 import { connection } from '../connection/manager';
@@ -8,7 +8,7 @@ import { useCan, useConnection, useRemoteAction } from '../connection/hooks';
 import { sendWakeOnLan } from '../connection/udp';
 import { Button, Card, ConfirmDialog, ErrorText, Muted, NotAllowed, Title, haptic } from '../components/ui';
 
-type Action = 'shutdown' | 'restart' | 'sleep' | 'hibernate' | 'lock' | 'monitorOff';
+type Action = 'shutdown' | 'restart' | 'sleep' | 'hibernate' | 'lock' | 'monitorOff' | 'monitorOn';
 
 export function PowerScreen() {
   const { c, t, row, prefs } = useApp();
@@ -31,7 +31,8 @@ export function PowerScreen() {
     { id: 'sleep', label: t('power.sleep'), icon: Moon },
     { id: 'hibernate', label: t('power.hibernate'), icon: Snowflake },
     { id: 'lock', label: t('power.lock'), icon: Lock },
-    { id: 'monitorOff', label: t('power.monitorOff'), icon: MonitorOff }
+    { id: 'monitorOff', label: t('power.monitorOff'), icon: MonitorOff },
+    { id: 'monitorOn', label: t('power.monitorOn'), icon: Monitor }
   ];
 
   const run = (a: Action) => {

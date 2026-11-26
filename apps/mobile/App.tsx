@@ -24,7 +24,8 @@ import { MacrosScreen } from './src/screens/MacrosScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { AdminScreen } from './src/screens/AdminScreen';
 import { ownerEnabled, startOwner } from './src/admin/owner';
-import { LockScreen, OwnerBanners, WelcomeName, useOwner } from './src/admin/OwnerUi';
+import { LockScreen, OwnerBanners, UpdateRequiredScreen, WelcomeName, useOwner, useUpdate } from './src/admin/OwnerUi';
+import { startUpdateChecks, updatesEnabled } from './src/admin/updates';
 import { ScreenScreen } from './src/screens/ScreenScreen';
 import { ToolsScreen } from './src/screens/ToolsScreen';
 
@@ -61,6 +62,10 @@ export default function App() {
 function Root() {
   const { c, prefs, ready, setPrefs } = useApp();
   const owner = useOwner();
+  const update = useUpdate();
+  useEffect(() => {
+    void startUpdateChecks();
+  }, []);
   const nameRef = useRef(prefs.userName);
   nameRef.current = prefs.userName;
   useEffect(() => {
@@ -97,6 +102,9 @@ function Root() {
       </View>
     );
   }
+
+  // Mandatory updates: an outdated iPhone version stops working.
+  if (updatesEnabled && update.required) return <UpdateRequiredScreen />;
 
   // Owner service: ask for a name once (with a clear notice), and honour the owner's lock.
   if (ownerEnabled && !prefs.userName) {

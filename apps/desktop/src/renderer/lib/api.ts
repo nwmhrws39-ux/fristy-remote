@@ -5,7 +5,7 @@ declare global {
   interface Window {
     fristy: {
       invoke(channel: IpcChannel, payload?: unknown): Promise<unknown>;
-      on(event: 'state' | 'pairing-request' | 'input-activity' | 'security', cb: (data: unknown) => void): () => void;
+      on(event: 'state' | 'pairing-request' | 'input-activity' | 'security' | 'update', cb: (data: unknown) => void): () => void;
     };
   }
 }

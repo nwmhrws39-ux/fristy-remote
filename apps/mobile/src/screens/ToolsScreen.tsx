@@ -78,6 +78,7 @@ function MessageCard() {
   const [text, setText] = useState('');
   const [speak, setSpeak] = useState(true);
   const [sent, setSent] = useState(false);
+  const [speakNote, setSpeakNote] = useState<string | null>(null);
   if (!can) return null;
   return (
     <Card title={t('tools.message')} right={<MessageSquare color={c.accent} size={20} />}>
@@ -92,10 +93,14 @@ function MessageCard() {
         disabled={!text.trim()}
         busy={act.busy}
         onPress={async () => {
-          const ok = await act.run(() => connection.call('system.message', { text: text.trim(), speak }));
-          if (ok) setSent(true);
+          const r = await act.run(() => connection.call('system.message', { text: text.trim(), speak }, 25_000));
+          if (r) {
+            setSent(true);
+            setSpeakNote(r.speakError ?? null);
+          }
         }}
       />
+      {speakNote && <Muted>🔇 {speakNote}</Muted>}
       <ErrorText>{act.error}</ErrorText>
     </Card>
   );

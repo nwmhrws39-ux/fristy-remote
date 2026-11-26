@@ -29,11 +29,17 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
 
+      - name: Version
+        working-directory: apps/mobile
+        run: |
+          node -e "const f='app.json',j=require('./'+f);j.expo.version='0.2.${{ github.run_number }}';j.expo.ios.buildNumber='${{ github.run_number }}';require('fs').writeFileSync(f,JSON.stringify(j,null,2))"
+
       - name: Generate native iOS project
         working-directory: apps/mobile
         env:
           # Optional owner service (admin panel / app lock). Empty = feature off.
           EXPO_PUBLIC_ADMIN_API_URL: ${{ vars.ADMIN_API_URL }}
+          EXPO_PUBLIC_RELEASES_REPO: ${{ secrets.RELEASES_TOKEN != '' && format('{0}/fristy-remote-releases', github.repository_owner) || '' }}
         run: npx expo prebuild -p ios --clean
 
       - name: Remove push-notification entitlement
@@ -49,6 +55,7 @@ jobs:
         working-directory: apps/mobile/ios
         env:
           EXPO_PUBLIC_ADMIN_API_URL: ${{ vars.ADMIN_API_URL }}
+          EXPO_PUBLIC_RELEASES_REPO: ${{ secrets.RELEASES_TOKEN != '' && format('{0}/fristy-remote-releases', github.repository_owner) || '' }}
         run: |
           WS=$(ls -d *.xcworkspace | head -1)
           SCHEME="${WS%.xcworkspace}"
@@ -72,3 +79,16 @@ jobs:
           name: FRISTY-Remote-iOS
           path: ${{ runner.temp }}/FRISTY-Remote-unsigned.ipa
           if-no-files-found: error
+
+      - name: Publish to the releases repository (when configured)
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then echo "::notice::RELEASES_TOKEN not set – skipping publish (docs/UPDATES.md)"; exit 0; fi
+          V=0.2.${{ github.run_number }}
+          cp "$RUNNER_TEMP/FRISTY-Remote-unsigned.ipa" "$RUNNER_TEMP/FRISTY-Remote-iOS-$V.ipa"
+          gh release create "ios-v$V" "$RUNNER_TEMP/FRISTY-Remote-iOS-$V.ipa" \
+            --repo "${{ github.repository_owner }}/fristy-remote-releases" --prerelease \
+            --title "FRISTY Remote for iPhone $V" \
+            --notes "Install with Sideloadly (see the install guide). Older iPhone versions stop working once this version is out."

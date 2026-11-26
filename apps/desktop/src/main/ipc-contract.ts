@@ -67,6 +67,9 @@ export const IPC = {
   'app.info': none,
   'owner.login': z.object({ code: z.string().min(1).max(128) }).strict(),
   'owner.refresh': none,
+  'update.state': none,
+  'update.check': none,
+  'update.install': none,
   'shell.openDocs': z.object({ page: z.enum(['wol', 'security', 'readme']) }).strict()
 } as const;
 
@@ -74,5 +77,5 @@ export type IpcChannel = keyof typeof IPC;
 export const IPC_CHANNELS = Object.keys(IPC) as IpcChannel[];
 
 /** main → renderer push events */
-export const IPC_EVENTS = ['state', 'pairing-request', 'input-activity', 'security'] as const;
+export const IPC_EVENTS = ['state', 'pairing-request', 'input-activity', 'security', 'update'] as const;
 export type IpcEvent = (typeof IPC_EVENTS)[number];

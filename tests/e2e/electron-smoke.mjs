@@ -118,6 +118,19 @@ try {
   assert.equal(jpeg[1], 0xd8, 'frame must be a JPEG');
   if (shots) fs.writeFileSync(path.join(shots, 'e2e-remote-frame.jpg'), jpeg);
   step(`screen captured remotely: ${frame.w}×${frame.h} JPEG, ${Math.round(jpeg.length / 1024)} KB`);
+  assert.ok('cursor' in frame, 'frames carry the cursor position');
+  const times = [];
+  for (let i = 0; i < 8; i++) {
+    const t0 = Date.now();
+    await client.call('screen.frame', { displayId: displays[0].id, maxWidth: 1280, quality: 70 });
+    times.push(Date.now() - t0);
+  }
+  const avg = Math.round(times.slice(2).reduce((a, b) => a + b, 0) / (times.length - 2));
+  step(`frame time after warm-up: ${avg} ms (≈${Math.round(1000 / Math.max(avg, 1))} fps possible on a fast link)`);
+  const windowUrls = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.webContents.getURL()));
+  step(`capture engine: ${windowUrls.some((u) => u.includes('capture.html')) ? 'live video stream' : 'screenshot fallback'}`);
+  const cur = await client.call('screen.cursor', { displayId: displays[0].id });
+  assert.ok(cur === null || (cur.x >= 0 && cur.x <= 1), 'cursor position is normalized');
   await client.call('clipboard.set', { text: 'hello from the phone' });
   assert.equal((await client.call('clipboard.get', {})).text, 'hello from the phone');
   step('clipboard round-trip through the PC clipboard');

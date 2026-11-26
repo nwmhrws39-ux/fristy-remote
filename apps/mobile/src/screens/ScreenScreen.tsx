@@ -1,83 +1,44 @@
-import { useCallback, useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
+import { useCallback, useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { Modal, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from 'react-native';
 import { useKeepAwake } from 'expo-keep-awake';
 import * as MediaLibrary from 'expo-media-library';
 import { File, Paths } from 'expo-file-system';
 import { ArrowDown, ArrowUp, Camera, Expand, Keyboard, Minimize2, Monitor } from 'lucide-react-native';
-import type { DisplayInfo, ScreenFrame } from '@fristy/protocol';
 import { decodeBase64 } from '@fristy/shared';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
 import { connection } from '../connection/manager';
 import { useCan, useConnection } from '../connection/hooks';
 import { ErrorText, Muted, NotAllowed, Title, haptic } from '../components/ui';
+import { FrameView, QUALITY, useCursor, useDisplays, useScreenStream, type Quality } from '../screen/stream';
 
-const QUALITY = {
-  low: { maxWidth: 800, quality: 40 },
-  medium: { maxWidth: 1280, quality: 55 },
-  high: { maxWidth: 1920, quality: 70 }
-} as const;
-type Quality = keyof typeof QUALITY;
-
-/**
- * Live view of the PC screen. Frames are pulled one at a time, so the frame
- * rate adapts automatically to the connection (fast on Wi-Fi, slower via Tailscale).
- */
+/** Live view of the PC screen with the mouse cursor, tap-to-click and pinch zoom. */
 export function ScreenScreen() {
   useKeepAwake();
   const { c, t, row, prefs } = useApp();
   const conn = useConnection();
+  const win = useWindowDimensions();
   const can = useCan('screen');
   const canInput = useCan('input') && (conn.accepted?.host.inputEnabled ?? false);
-  const [displays, setDisplays] = useState<DisplayInfo[] | null>(null);
-  const [displayId, setDisplayId] = useState<string | null>(null);
-  const [quality, setQuality] = useState<Quality>('medium');
-  const [frame, setFrame] = useState<ScreenFrame | null>(null);
-  const [fps, setFps] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [quality, setQuality] = useState<Quality>('high');
   const [full, setFull] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const keyboard = useRef<ComponentRef<typeof TextInput>>(null);
+  const { displays, displayId, setDisplayId, error: dispError } = useDisplays(can);
+  const { frame, fps, error } = useScreenStream(can, displayId, quality);
+  const cursor = useCursor(can, displayId);
 
-  useEffect(() => {
-    if (!can) return;
-    connection
-      .call('screen.displays', {})
-      .then((d) => {
-        setDisplays(d);
-        setDisplayId((cur) => cur ?? (d.find((x) => x.primary) ?? d[0])?.id ?? null);
-        setError(null);
-      })
-      .catch((e: Error) => setError(e.message));
-  }, [can, conn.status]);
-
-  // Pull loop: request the next frame as soon as the previous one arrived.
-  useEffect(() => {
-    if (!can || !displayId) return;
-    let alive = true;
-    const times: number[] = [];
-    void (async () => {
-      while (alive) {
-        try {
-          const f = await connection.call('screen.frame', { displayId, ...QUALITY[quality] }, 20_000);
-          if (!alive) break;
-          setFrame(f);
-          setError(null);
-          const now = Date.now();
-          times.push(now);
-          while (times.length && now - times[0]! > 3000) times.shift();
-          setFps(times.length / 3);
-        } catch (e) {
-          if (!alive) break;
-          setError((e as Error).message);
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [can, displayId, quality, conn.status]);
+  const click = useCallback(
+    (x: number, y: number, button: 'left' | 'right') => {
+      if (!canInput || !displayId) return;
+      haptic(prefs.haptics, button === 'right' ? 'medium' : 'light');
+      void connection
+        .call('input.moveTo', { displayId, x, y })
+        .then(() => connection.call('input.mouseButton', { button, action: 'click' }))
+        .catch(() => undefined);
+    },
+    [canInput, displayId, prefs.haptics]
+  );
 
   const saveScreenshot = useCallback(async () => {
     if (!displayId) return;
@@ -106,9 +67,28 @@ export function ScreenScreen() {
     );
   }
 
+  const aspect = frame ? frame.w / frame.h : 16 / 9;
   const viewer = (fullscreen: boolean) => (
-    <ScreenView frame={frame} displayId={displayId} canInput={canInput} fullscreen={fullscreen} />
+    <ScrollView
+      maximumZoomScale={4}
+      minimumZoomScale={1}
+      bouncesZoom
+      centerContent
+      showsHorizontalScrollIndicator={false}
+      showsVerticalScrollIndicator={false}
+      style={{ borderRadius: fullscreen ? 0 : radius.lg, backgroundColor: '#000', marginVertical: fullscreen ? 0 : spacing.md, flexGrow: 0 }}
+      contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }}
+    >
+      <FrameView
+        frame={frame}
+        cursor={cursor}
+        width={fullscreen ? Math.min(win.width, win.height * aspect) : '100%'}
+        onTap={canInput ? (x, y) => click(x, y, 'left') : undefined}
+        onLongTap={canInput ? (x, y) => click(x, y, 'right') : undefined}
+      />
+    </ScrollView>
   );
+  const err = dispError ?? error;
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }} keyboardShouldPersistTaps="always">
@@ -116,12 +96,11 @@ export function ScreenScreen() {
         <Title>{t('screen.title')}</Title>
         <Text style={{ color: c.textFaint, fontSize: font.tiny }}>{frame ? `${fps.toFixed(1)} fps · ${frame.w}×${frame.h}` : ''}</Text>
       </View>
-      {error && /disabled/i.test(error) ? <ErrorText>{t('screen.disabled')}</ErrorText> : <ErrorText>{error}</ErrorText>}
+      {err && /disabled/i.test(err) ? <ErrorText>{t('screen.disabled')}</ErrorText> : <ErrorText>{err}</ErrorText>}
 
       {viewer(false)}
       <Muted center>{canInput ? t('screen.tapHint') : t('screen.viewOnly')}</Muted>
 
-      {/* toolbar */}
       <View style={{ flexDirection: row, gap: spacing.sm, marginTop: spacing.md, flexWrap: 'wrap' }}>
         <ToolButton icon={<Expand color={c.accent} size={18} />} label={t('input.fullscreen')} onPress={() => setFull(true)} />
         <ToolButton icon={<Camera color={c.accent} size={18} />} label={t('screen.save')} onPress={() => void saveScreenshot()} />
@@ -139,7 +118,7 @@ export function ScreenScreen() {
       <View style={{ flexDirection: row, gap: spacing.sm }}>
         {(Object.keys(QUALITY) as Quality[]).map((q) => (
           <Pressable key={q} onPress={() => setQuality(q)} style={{ flex: 1, height: 38, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: quality === q ? c.accent : c.card }}>
-            <Text style={{ color: quality === q ? '#fff' : c.text, fontWeight: '700' }}>{t(`screen.${q}`)}</Text>
+            <Text style={{ color: quality === q ? '#fff' : c.text, fontWeight: '700', fontSize: font.small }}>{t(`screen.${q}`)}</Text>
           </Pressable>
         ))}
       </View>
@@ -159,7 +138,6 @@ export function ScreenScreen() {
         </View>
       )}
 
-      {/* hidden keyboard input (text is sent, never stored) */}
       <TextInput
         ref={keyboard}
         value=""
@@ -196,54 +174,5 @@ function ToolButton({ icon, label, onPress }: { icon: ReactNode; label?: string;
       {icon}
       {label ? <Text style={{ color: c.text, fontWeight: '600', fontSize: font.small }}>{label}</Text> : null}
     </Pressable>
-  );
-}
-
-/** Zoomable frame (pinch on iOS). Taps map to normalized PC coordinates. */
-function ScreenView({ frame, displayId, canInput, fullscreen }: { frame: ScreenFrame | null; displayId: string | null; canInput: boolean; fullscreen: boolean }) {
-  const { c, prefs } = useApp();
-  const win = useWindowDimensions();
-  const [box, setBox] = useState({ w: 0, h: 0 });
-  const aspect = frame ? frame.w / frame.h : 16 / 9;
-  // Full screen: fit the whole PC screen inside the phone screen (works in landscape too).
-  const fitWidth = fullscreen ? Math.min(win.width, win.height * aspect) : undefined;
-
-  const click = (e: GestureResponderEvent, button: 'left' | 'right') => {
-    if (!canInput || !displayId || !box.w) return;
-    const x = Math.min(1, Math.max(0, e.nativeEvent.locationX / box.w));
-    const y = Math.min(1, Math.max(0, e.nativeEvent.locationY / box.h));
-    haptic(prefs.haptics, button === 'right' ? 'medium' : 'light');
-    void connection
-      .call('input.moveTo', { displayId, x, y })
-      .then(() => connection.call('input.mouseButton', { button, action: 'click' }))
-      .catch(() => undefined);
-  };
-
-  return (
-    <ScrollView
-      maximumZoomScale={4}
-      minimumZoomScale={1}
-      bouncesZoom
-      centerContent
-      showsHorizontalScrollIndicator={false}
-      showsVerticalScrollIndicator={false}
-      style={{ borderRadius: fullscreen ? 0 : radius.lg, backgroundColor: '#000', marginVertical: fullscreen ? 0 : spacing.md, flexGrow: 0 }}
-      contentContainerStyle={{ alignItems: 'center', justifyContent: 'center' }}
-    >
-      <Pressable
-        onPress={(e) => click(e, 'left')}
-        onLongPress={(e) => click(e, 'right')}
-        onLayout={(e: LayoutChangeEvent) => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
-        style={{ width: fitWidth ?? '100%', aspectRatio: aspect }}
-      >
-        {frame ? (
-          <Image source={{ uri: `data:image/jpeg;base64,${frame.data}` }} style={{ width: '100%', height: '100%' }} resizeMode="stretch" fadeDuration={0} />
-        ) : (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <ActivityIndicator color={c.accent} />
-          </View>
-        )}
-      </Pressable>
-    </ScrollView>
   );
 }

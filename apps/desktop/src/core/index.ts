@@ -85,6 +85,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   private discovery: DiscoveryResponder | null = null;
   private relay: RelayClient;
   readonly owner: OwnerClient;
+  /** set while a newer version of FRISTY Remote must be installed first */
+  private updateRequired: string | null = null;
   private statsTimer: NodeJS.Timeout | null = null;
   private lastAlert = new Map<string, number>();
   private listenError: string | null = null;
@@ -147,7 +149,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       identity: opts.identity,
       pairing: this.pairing,
       handlers,
-      ownerLock: () => (this.owner.status.locked && !this.owner.status.admin ? this.owner.status.message : null),
+      ownerLock: () =>
+        this.updateRequired ?? (this.owner.status.locked && !this.owner.status.admin ? this.owner.status.message : null),
       host: () => ({
         hostId: encodeBase64(opts.identity.publicKey),
         computerName: this.computerName,
@@ -298,6 +301,17 @@ export class FristyCore extends EventEmitter<CoreEvents> {
 
   denyPairing(id: string) {
     this.server.denyPairing(id);
+  }
+
+  /** Blocks phone connections until the app is updated (mandatory updates). */
+  setUpdateRequired(message: string | null) {
+    if (message === this.updateRequired) return;
+    this.updateRequired = message;
+    if (message) {
+      this.server.disconnectAll(message);
+      this.store.log('info', 'update', message);
+    }
+    this.emitState();
   }
 
   /* ---------------- emergency stop ---------------- */

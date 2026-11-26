@@ -66,7 +66,7 @@ export function createHandlers(d: HandlerDeps): Handlers {
     }
   };
 
-  const methods: Omit<MethodHandlers, 'screen.displays' | 'screen.frame' | 'input.moveTo' | 'clipboard.get' | 'clipboard.set' | 'files.open' | 'system.message'> = {
+  const methods: Omit<MethodHandlers, 'screen.displays' | 'screen.frame' | 'screen.cursor' | 'input.moveTo' | 'clipboard.get' | 'clipboard.set' | 'files.open' | 'system.message'> = {
     'session.ping': async (_c, p) => ({ t: p.t, serverTime: Date.now() }),
     'session.subscribeStats': async (c, p) => {
       c.setStatsSubscription(p.enabled);
@@ -212,8 +212,12 @@ export function createHandlers(d: HandlerDeps): Handlers {
         display(p.displayId);
         let frame = await bridge().grab(p.displayId, p.maxWidth, p.quality);
         // Keep frames comfortably inside transport limits (relay ≈ 1 MB per message).
-        if (frame.data.length > 700_000) frame = await bridge().grab(p.displayId, Math.min(p.maxWidth, 1280), Math.min(p.quality, 40));
+        if (frame.data.length > 900_000) frame = await bridge().grab(p.displayId, Math.min(p.maxWidth, 1600), Math.min(p.quality, 55));
         return { ...frame, ts: Date.now() };
+      },
+      'screen.cursor': async (_c, p) => {
+        display(p.displayId);
+        return bridge().cursor(p.displayId);
       },
       'input.moveTo': async (_c, p) => {
         display(p.displayId);
@@ -234,8 +238,14 @@ export function createHandlers(d: HandlerDeps): Handlers {
       },
       'system.message': async (c, p) => {
         bridge().notify(`FRISTY Remote – ${c.deviceName}`, p.text);
-        if (p.speak) await wrapPlatform(() => d.platform.speak(p.text)).catch(() => undefined);
-        return { ok: true };
+        if (!p.speak) return { ok: true, spoken: false, speakError: null };
+        try {
+          await wrapPlatform(() => d.platform.speak(p.text));
+          return { ok: true, spoken: true, speakError: null };
+        } catch (e) {
+          // The message was still shown; tell the phone why it was not read aloud (e.g. no Hebrew voice).
+          return { ok: true, spoken: false, speakError: (e as Error).message.slice(0, 200) };
+        }
       }
     } as MethodHandlers,
     onDisconnect: (deviceId) => d.files.cancelDevice(deviceId)

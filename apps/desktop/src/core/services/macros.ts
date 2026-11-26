@@ -37,7 +37,7 @@ export interface MacroExecutor {
   setVolume(level: number): Promise<unknown>;
   mute(muted: boolean): Promise<unknown>;
   media(action: 'playPause' | 'next' | 'previous' | 'stop'): Promise<unknown>;
-  power(action: 'lock' | 'monitorOff' | 'sleep'): Promise<unknown>;
+  power(action: 'lock' | 'monitorOff' | 'monitorOn' | 'sleep'): Promise<unknown>;
 }
 
 export const DEFAULT_MACROS: Omit<MacroRow, 'id'>[] = [

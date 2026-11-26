@@ -150,6 +150,18 @@ namespace Fristy
 
         public static void Lock() { if (!LockWorkStation()) throw new Exception("LockWorkStation failed"); }
         public static void MonitorOff() { PostMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)2); }
+
+        [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
+
+        /// Wakes the display: signal display activity, ask monitors to power on, and nudge the mouse
+        /// (the most reliable trigger on modern Windows).
+        public static void MonitorOn()
+        {
+            SetThreadExecutionState(0x00000002 | 0x00000001); // ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED
+            PostMessage((IntPtr)0xFFFF, 0x0112, (IntPtr)0xF170, (IntPtr)(-1));
+            Input.Move(1, 0);
+            Input.Move(-1, 0);
+        }
         public static void Sleep() { if (!SetSuspendState(false, false, false)) throw new Exception("Sleep is not available on this computer"); }
         public static void Hibernate() { if (!SetSuspendState(true, false, false)) throw new Exception("Hibernate is disabled or not supported (enable with 'powercfg /hibernate on' as administrator)"); }
     }
@@ -523,9 +535,51 @@ namespace Fristy
 Add-Type -TypeDefinition $source -Language CSharp
 [Fristy.Cursor]::InitDpi()
 
-# Text-to-speech for "message to PC" (System.Speech ships with .NET Framework).
+# Text-to-speech for "message to PC".
+# Uses the modern Windows voices (WinRT, includes Hebrew "Asaf" and many other
+# languages) and picks a voice matching the text's language; falls back to the
+# classic System.Speech engine (English voices) if WinRT speech is unavailable.
 $script:speech = $null
+$script:player = $null
+$script:asTask = $null
+
+function Invoke-AwaitWinRt($op, [Type]$resultType) {
+    if ($null -eq $script:asTask) {
+        Add-Type -AssemblyName System.Runtime.WindowsRuntime
+        $script:asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+            $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+        })[0]
+    }
+    $task = $script:asTask.MakeGenericMethod($resultType).Invoke($null, @($op))
+    [void]$task.Wait(15000)
+    return $task.Result
+}
+
 function Invoke-Speak([string]$text) {
+    $hebrew = $text -match '[\u0590-\u05FF]'
+    try {
+        [void][Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType = WindowsRuntime]
+        [void][Windows.Media.SpeechSynthesis.SpeechSynthesisStream, Windows.Media.SpeechSynthesis, ContentType = WindowsRuntime]
+        $synth = New-Object Windows.Media.SpeechSynthesis.SpeechSynthesizer
+        $voices = [Windows.Media.SpeechSynthesis.SpeechSynthesizer]::AllVoices
+        if ($hebrew) {
+            $voice = $voices | Where-Object { $_.Language -like 'he*' } | Select-Object -First 1
+            if ($null -eq $voice) {
+                throw 'No Hebrew voice installed. Windows Settings > Time & language > Speech > Add voices > Hebrew.'
+            }
+            $synth.Voice = $voice
+        }
+        $stream = Invoke-AwaitWinRt ($synth.SynthesizeTextToStreamAsync($text)) ([Windows.Media.SpeechSynthesis.SpeechSynthesisStream])
+        $net = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($stream)
+        if ($null -ne $script:player) { $script:player.Stop() }
+        $script:player = New-Object System.Media.SoundPlayer($net)
+        $script:player.Play()
+        return
+    }
+    catch {
+        if ($hebrew) { throw }
+    }
+    # Fallback: classic SAPI voices (usually English only).
     if ($null -eq $script:speech) {
         Add-Type -AssemblyName System.Speech
         $script:speech = New-Object System.Speech.Synthesis.SpeechSynthesizer
@@ -556,6 +610,7 @@ while ($true) {
             'combo'       { [Fristy.Input]::Combo([int[]]@($a.modifiers), [int]$a.vk) }
             'lock'        { [Fristy.Power]::Lock() }
             'monitorOff'  { [Fristy.Power]::MonitorOff() }
+            'monitorOn'   { [Fristy.Power]::MonitorOn() }
             'sleep'       { [Fristy.Power]::Sleep() }
             'hibernate'   { [Fristy.Power]::Hibernate() }
             'processes'   { $result = [Fristy.Processes]::List() }

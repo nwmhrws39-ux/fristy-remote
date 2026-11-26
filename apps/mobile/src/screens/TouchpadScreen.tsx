@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useKeepAwake } from 'expo-keep-awake';
-import { Expand, Keyboard, Minimize2, MousePointerClick, Pause, Play, SkipBack, SkipForward, VolumeX } from 'lucide-react-native';
+import { Expand, Keyboard, Minimize2, Monitor, MousePointerClick, Pause, Play, SkipBack, SkipForward, VolumeX } from 'lucide-react-native';
+import { FrameView, useCursor, useDisplays, useScreenStream } from '../screen/stream';
 import type { KeyName } from '@fristy/protocol';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
@@ -186,6 +187,13 @@ export function TouchpadScreen() {
   const [confirm, setConfirm] = useState<(typeof SHORTCUTS)[number] | null>(null);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const enabled = conn.accepted?.host.inputEnabled ?? false;
+  // Optional live preview of the PC screen (with the mouse cursor) above the touchpad.
+  const canScreen = !!conn.accepted?.permissions.includes('screen') && conn.status === 'online';
+  const [showScreen, setShowScreen] = useState(false);
+  const preview = showScreen && canScreen;
+  const { displayId } = useDisplays(preview);
+  const { frame, error: screenError } = useScreenStream(preview, displayId, 'medium');
+  const cursor = useCursor(preview, displayId);
 
   if (conn.status === 'online' && !can) return <View style={{ padding: spacing.lg }}><Title>{t('nav.input')}</Title><NotAllowed permission="input" /></View>;
 
@@ -202,6 +210,11 @@ export function TouchpadScreen() {
           <Pressable onPress={() => inputRef.current?.focus()} style={{ padding: 10, backgroundColor: c.card, borderRadius: radius.md }} accessibilityLabel={t('input.keyboard')}>
             <Keyboard color={c.accent} size={22} />
           </Pressable>
+          {canScreen && (
+            <Pressable onPress={() => setShowScreen((v) => !v)} style={{ padding: 10, backgroundColor: showScreen ? c.accent : c.card, borderRadius: radius.md }} accessibilityLabel={t('input.showScreen')}>
+              <Monitor color={showScreen ? '#fff' : c.accent} size={22} />
+            </Pressable>
+          )}
           <Pressable onPress={() => setFull(true)} style={{ padding: 10, backgroundColor: c.card, borderRadius: radius.md }} accessibilityLabel={t('input.fullscreen')}>
             <Expand color={c.accent} size={22} />
           </Pressable>
@@ -213,7 +226,13 @@ export function TouchpadScreen() {
         </View>
       )}
       <View pointerEvents={enabled ? 'auto' : 'none'} style={{ opacity: enabled ? 1 : 0.4 }}>
-        <Touchpad height={300} />
+        {preview && (
+          <View style={{ borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.sm }}>
+            <FrameView frame={frame} cursor={cursor} />
+          </View>
+        )}
+        {preview && screenError && <Muted>{/disabled/i.test(screenError) ? t('screen.disabled') : screenError}</Muted>}
+        <Touchpad height={preview ? 220 : 300} />
         <MouseButtons />
 
         {/* Hidden input that forwards typed characters. Text is sent, never stored or logged. */}

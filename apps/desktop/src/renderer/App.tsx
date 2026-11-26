@@ -124,6 +124,7 @@ function Shell({ state }: { state: CoreState }) {
       <main className="flex-1 overflow-y-auto">
         <div className="drag h-10" />
         <div className="mx-auto max-w-6xl px-8 pb-10">
+          <UpdateBanner />
           <OwnerBanners state={state} />
           {page === 'dashboard' && <Dashboard state={state} go={setPage} />}
           {page === 'devices' && <Devices state={state} />}
@@ -204,6 +205,48 @@ function OwnerBanners({ state }: { state: CoreState }) {
         </div>
       )}
       {o.updateAvailable && <div className="rounded-2xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn">{t('owner.update')}</div>}
+    </div>
+  );
+}
+
+type UpdateState =
+  | { status: 'disabled' }
+  | { status: 'idle' | 'checking' | 'none'; current: string }
+  | { status: 'available' | 'downloading'; current: string; version: string; percent: number }
+  | { status: 'ready'; current: string; version: string }
+  | { status: 'error'; current: string; error: string };
+
+export function useUpdateState() {
+  const [st, setSt] = useState<UpdateState>({ status: 'disabled' });
+  useEffect(() => {
+    void invoke<UpdateState>('update.state').then(setSt);
+    return window.fristy.on('update', (d) => setSt(d as UpdateState));
+  }, []);
+  return st;
+}
+
+/** Mandatory update banner: shown as soon as a newer version exists. */
+function UpdateBanner() {
+  const { t } = useI18n();
+  const st = useUpdateState();
+  if (st.status !== 'available' && st.status !== 'downloading' && st.status !== 'ready') return null;
+  const pct = st.status === 'ready' ? 100 : st.percent;
+  return (
+    <div className="mb-4 rounded-2xl border border-accent bg-accent/15 p-4 fade-in">
+      <div className="flex items-center gap-4">
+        <div className="flex-1 text-sm">
+          <div className="font-bold">{t('update.required')}</div>
+          <div className="text-muted">
+            {st.status === 'ready' ? t('update.ready', { v: st.version }) : st.status === 'downloading' ? t('update.downloading', { v: st.version, p: pct }) : t('update.available', { v: st.version })}
+          </div>
+        </div>
+        <Button disabled={st.status !== 'ready'} onClick={() => void invoke('update.install')}>
+          {t('update.now')}
+        </Button>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-line">
+        <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { BrowserWindow, Menu, Notification, Tray, app, clipboard, desktopCapturer, globalShortcut, nativeImage, safeStorage, screen, session, shell } from 'electron';
 import type { DesktopBridge } from '../core/bridge';
+import { cursorOn, grabFrame, isCaptureContents, stopCapture } from './capture';
+import { Updater } from './updater';
 import { FristyCore } from '../core';
 import { SecretStore, loadIdentity, type SecretCipher } from '../core/identity';
 import { createUnsupportedPlatform } from '../core/platform/unsupported';
@@ -29,6 +31,7 @@ let indicatorTimer: NodeJS.Timeout | null = null;
 let tray: Tray | null = null;
 let quitting = false;
 let platform: Platform & { dispose?: () => void };
+const updater = new Updater();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -155,21 +158,8 @@ const desktopBridge: DesktopBridge = {
       primary: d.id === primary
     }));
   },
-  async grab(displayId, maxWidth, quality) {
-    const d = displayById(displayId);
-    if (!d) throw new Error('display not found');
-    const physW = d.size.width * d.scaleFactor;
-    const physH = d.size.height * d.scaleFactor;
-    const scale = Math.min(1, maxWidth / physW);
-    const sources = await desktopCapturer.getSources({
-      types: ['screen'],
-      thumbnailSize: { width: Math.round(physW * scale), height: Math.round(physH * scale) }
-    });
-    const src = sources.find((s) => s.display_id === displayId) ?? (sources.length === 1 ? sources[0] : undefined);
-    if (!src || src.thumbnail.isEmpty()) throw new Error('screen capture unavailable');
-    const size = src.thumbnail.getSize();
-    return { w: size.width, h: size.height, data: src.thumbnail.toJPEG(quality).toString('base64') };
-  },
+  grab: (displayId, maxWidth, quality) => grabFrame(displayId, maxWidth, quality, path.join(__dirname, '..', 'renderer'), DEV_URL),
+  cursor: (displayId) => cursorOn(displayId),
   toScreenPoint(displayId, nx, ny) {
     const d = displayById(displayId);
     if (!d) throw new Error('display not found');
@@ -232,8 +222,9 @@ app.on('second-instance', showMain);
 
 app.whenReady().then(async () => {
   // Deny every web permission (camera, mic, notifications, geolocation …) to renderer content.
-  session.defaultSession.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // The only exception: the hidden capture window may use screen capture ("media").
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(perm === 'media' && isCaptureContents(wc)));
+  session.defaultSession.setPermissionCheckHandler((wc, perm) => perm === 'media' && !!wc && isCaptureContents(wc));
 
   const dataDir = app.getPath('userData');
   const { identity, persisted } = loadIdentity(dataDir, cipher);
@@ -264,7 +255,12 @@ app.whenReady().then(async () => {
     }
   });
 
-  registerIpc(core, secrets, trusted);
+  registerIpc(core, secrets, trusted, updater);
+  updater.on('state', (st) => {
+    send('update', st);
+    core.setUpdateRequired(updater.required ? `A new version of FRISTY Remote${'version' in st && st.version ? ` (${st.version})` : ''} is available. Open FRISTY Remote on the PC and click "Update now".` : null);
+    updateTray();
+  });
 
   core.on('state', (st) => {
     send('state', st);
@@ -304,6 +300,7 @@ app.whenReady().then(async () => {
   if (!registered) core.store.log('warn', 'input', `Emergency shortcut ${EMERGENCY_SHORTCUT} is in use by another application`);
 
   createMainWindow();
+  updater.start();
 });
 
 app.on('window-all-closed', () => {
@@ -312,6 +309,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   quitting = true;
+  stopCapture();
 });
 
 app.on('will-quit', (e) => {

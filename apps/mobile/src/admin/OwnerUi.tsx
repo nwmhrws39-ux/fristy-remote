@@ -1,6 +1,8 @@
 import { useState, useSyncExternalStore } from 'react';
+import { Linking } from 'react-native';
+import { currentVersion, updateStore } from './updates';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
-import { KeyRound, Lock } from 'lucide-react-native';
+import { Download, KeyRound, Lock } from 'lucide-react-native';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
 import { adminLogin, ownerStore } from './owner';
@@ -107,6 +109,29 @@ export function OwnerBanners() {
           <Text style={{ color: c.warning, fontWeight: '700' }}>⬆️ {t('owner.update')}</Text>
         </View>
       )}
+    </View>
+  );
+}
+
+export function useUpdate() {
+  return useSyncExternalStore(updateStore.subscribe, updateStore.get);
+}
+
+/** Shown instead of the app when a newer iPhone version exists (mandatory updates). */
+export function UpdateRequiredScreen() {
+  const { c, t } = useApp();
+  const u = useUpdate();
+  return (
+    <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
+      <View style={{ backgroundColor: c.accentSoft, padding: 24, borderRadius: 99 }}>
+        <Download color={c.accent} size={48} />
+      </View>
+      <Text style={{ color: c.text, fontSize: font.title, fontWeight: '900', textAlign: 'center' }}>{t('update.required')}</Text>
+      <Muted center>{t('update.requiredPhone', { v: u.latest ?? '' })}</Muted>
+      <Text style={{ color: c.textFaint, fontSize: font.tiny }}>
+        {currentVersion()} → {u.latest}
+      </Text>
+      {u.url && <Button label={t('update.download')} onPress={() => void Linking.openURL(u.url!)} />}
     </View>
   );
 }

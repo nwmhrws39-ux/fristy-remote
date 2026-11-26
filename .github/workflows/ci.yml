@@ -49,22 +49,27 @@ jobs:
       - name: Version
         shell: bash
         run: npm pkg set version=0.2.${{ github.run_number }} -w @fristy/desktop
-      - name: Build installer (and publish the update when configured)
+      - name: Build installer
         shell: bash
         run: |
           npm run build -w @fristy/desktop
           cd apps/desktop
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            npx electron-builder --win --x64 --publish always
-          else
-            npx electron-builder --win --x64 --publish never
-          fi
+          npx electron-builder --win --x64 --publish never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FRISTY_ADMIN_API_URL: ${{ vars.ADMIN_API_URL }}
           # Optional code signing (recommended to avoid SmartScreen warnings):
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - name: Publish the update as a GitHub Release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=0.2.${{ github.run_number }}
+          cd apps/desktop/release
+          gh release create "v$V" FRISTY-Remote-Setup-$V.exe* latest.yml \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "FRISTY Remote $V" --notes "Windows installer $V" --latest
       - uses: actions/upload-artifact@v4
         with:
           name: FRISTY-Remote-Setup

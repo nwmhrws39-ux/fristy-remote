@@ -4,6 +4,9 @@
 //   npx wrangler login        (approve in the browser that opens)
 //   node setup.mjs
 //
+// To deploy a newer server version later (keeps your admin code):
+//   node setup.mjs --update
+//
 // Creates the free D1 database (first time only), applies the schema, deploys
 // the worker, then asks you to type your admin code (hidden; it is stored as a
 // Cloudflare secret and never written to disk or sent anywhere else).
@@ -43,6 +46,11 @@ run('npx wrangler d1 execute fristy-admin --remote --file schema.sql -y');
 step('Deploying');
 const out = run('npx wrangler deploy');
 const url = (out.match(/https:\/\/[a-zA-Z0-9.-]+\.workers\.dev/) || [])[0];
+
+if (process.argv.includes('--update')) {
+  console.log(`\n✅ Updated.${url ? ` ${url}` : ''}`);
+  process.exit(0);
+}
 
 step('Admin code – type your secret code and press Enter (it is not shown)');
 const r = spawnSync('npx wrangler secret put ADMIN_CODE', { stdio: 'inherit', shell: true });

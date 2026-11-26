@@ -51,6 +51,12 @@ export interface AdminOverview {
   }[];
 }
 
+export interface OwnerStats {
+  days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
+  versions: { version: string; kind: string; users: number }[];
+  totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
+}
+
 const DISABLED: OwnerStatus = { enabled: false, locked: false, reason: null, message: '', announcement: '', updateAvailable: false, admin: false, lastCheck: null };
 
 export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
@@ -150,12 +156,17 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
   }
 
   private getToken(): string | null {
-    return this.opts.tokenStore ? this.opts.tokenStore.get() : this.memToken;
+    // memory copy keeps the session working if OS secure storage is unavailable
+    return this.opts.tokenStore?.get() ?? this.memToken;
   }
 
   private setToken(t: string | null) {
-    if (this.opts.tokenStore) this.opts.tokenStore.set(t);
-    else this.memToken = t;
+    this.memToken = t;
+    try {
+      this.opts.tokenStore?.set(t);
+    } catch {
+      /* stays signed in until the app restarts */
+    }
   }
 
   private async admin<T>(method: 'GET' | 'POST', p: string, body?: unknown): Promise<T> {
@@ -175,6 +186,10 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
 
   overview() {
     return this.admin<AdminOverview>('GET', '/v1/admin/overview');
+  }
+
+  stats(days = 30) {
+    return this.admin<OwnerStats>('GET', `/v1/admin/stats?days=${Math.round(days)}`);
   }
 
   setConfig(c: Partial<AdminOverview['config']>) {

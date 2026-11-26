@@ -3,7 +3,7 @@ import { Pressable, RefreshControl, ScrollView, Switch, Text, View } from 'react
 import { Crown, Laptop, LogOut, Smartphone } from 'lucide-react-native';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
-import { adminLogout, getOverview, setConfig, updateInstall, type Overview } from '../admin/owner';
+import { adminLogout, getOverview, getStats, setConfig, updateInstall, type Overview, type OwnerStats } from '../admin/owner';
 import { Button, Card, ErrorText, Input, Muted, Pill, Title } from '../components/ui';
 
 const flag = (cc: string | null) => (cc && /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65)) : '🌐');
@@ -23,6 +23,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
   const [lockMessage, setLockMessage] = useState('');
   const [announcement, setAnnouncement] = useState('');
   const [minVersion, setMinVersion] = useState('');
+  const [stats, setStats] = useState<OwnerStats | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,6 +33,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
       setLockMessage(d.config.lockMessage);
       setAnnouncement(d.config.announcement);
       setMinVersion(d.config.minVersion);
+      setStats(await getStats(14).catch(() => null));
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -65,6 +67,8 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
 
       {data && (
         <>
+          {stats && <StatsCard stats={stats} />}
+
           <Card style={{ borderColor: data.config.locked ? c.danger : c.cardBorder }}>
             <View style={{ flexDirection: row, alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ color: c.text, fontWeight: '800', flex: 1 }}>🔒 {t('owner.lockAll')}</Text>
@@ -131,5 +135,65 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
         }
       />
     </ScrollView>
+  );
+}
+
+/** Daily users for the last 14 days (phones + PCs stacked) and app versions. */
+function StatsCard({ stats }: { stats: OwnerStats }) {
+  const { c, t, row } = useApp();
+  const [sel, setSel] = useState<number | null>(null);
+  const max = Math.max(1, ...stats.days.map((d) => d.users));
+  const vMax = Math.max(1, ...stats.versions.map((v) => v.users));
+  const d = stats.days[sel ?? stats.days.length - 1];
+  const tiles: [string, number][] = [
+    [t('owner.total'), stats.totals.users],
+    [t('owner.active7'), stats.totals.active7],
+    [t('owner.active30'), stats.totals.active30]
+  ];
+  return (
+    <Card title={`📊 ${t('owner.stats')}`}>
+      <View style={{ flexDirection: row, gap: spacing.sm }}>
+        {tiles.map(([label, n]) => (
+          <View key={label} style={{ flex: 1, backgroundColor: c.bgElevated, borderRadius: radius.md, padding: 10 }}>
+            <Text style={{ color: c.textMuted, fontSize: font.tiny }}>{label}</Text>
+            <Text style={{ color: c.text, fontSize: 22, fontWeight: '800' }}>{n}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={{ color: c.text, fontWeight: '700', marginTop: spacing.md }}>{t('owner.dailyUsers')}</Text>
+      {d && (
+        <Text style={{ color: c.textMuted, fontSize: font.tiny, marginBottom: 6 }}>
+          {d.day} · {d.users} ({d.phones} 📱 · {d.pcs} 💻) · +{d.newUsers} {t('owner.newUsers')}
+        </Text>
+      )}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 110, gap: 3 }}>
+        {stats.days.map((x, i) => (
+          <Pressable key={x.day} onPress={() => setSel(i)} style={{ flex: 1, height: '100%', justifyContent: 'flex-end', opacity: sel === null || sel === i ? 1 : 0.5 }}>
+            <View style={{ height: `${(x.phones / max) * 100}%`, backgroundColor: c.accent, borderTopLeftRadius: 3, borderTopRightRadius: 3 }} />
+            <View style={{ height: `${(x.pcs / max) * 100}%`, backgroundColor: c.success }} />
+          </Pressable>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+        <Text style={{ color: c.textFaint, fontSize: 10 }}>{stats.days[0]?.day.slice(5)}</Text>
+        <Text style={{ color: c.textFaint, fontSize: 10 }}>{stats.days.at(-1)?.day.slice(5)}</Text>
+      </View>
+      <View style={{ flexDirection: row, gap: spacing.md, marginTop: 6 }}>
+        <Text style={{ color: c.accent, fontSize: font.tiny }}>■ {t('owner.phones')}</Text>
+        <Text style={{ color: c.success, fontSize: font.tiny }}>■ {t('owner.pcs')}</Text>
+      </View>
+      <Text style={{ color: c.text, fontWeight: '700', marginTop: spacing.md, marginBottom: 6 }}>{t('owner.versions')}</Text>
+      {stats.versions.map((v) => (
+        <View key={`${v.version}-${v.kind}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <Text style={{ color: c.text, fontSize: font.tiny, width: 74 }}>
+            {v.kind === 'pc' ? '💻' : '📱'} v{v.version}
+          </Text>
+          <View style={{ flex: 1, height: 10, borderRadius: 5, backgroundColor: c.bgElevated, overflow: 'hidden' }}>
+            <View style={{ width: `${(v.users / vMax) * 100}%`, height: '100%', borderRadius: 5, backgroundColor: v.kind === 'pc' ? c.success : c.accent }} />
+          </View>
+          <Text style={{ color: c.textMuted, fontSize: font.tiny, width: 26, textAlign: 'right' }}>{v.users}</Text>
+        </View>
+      ))}
+    </Card>
   );
 }

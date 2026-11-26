@@ -62,6 +62,50 @@ const ConfigSchema = z
   })
   .strict();
 
+const STATS_DAYS_MAX = 90;
+const dayKey = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+
+export interface Stats {
+  days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
+  versions: { version: string; kind: string; users: number }[];
+  totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
+}
+
+async function stats(deps: Deps, days: number): Promise<Stats> {
+  const now = deps.now();
+  const from = dayKey(now - (days - 1) * 86_400_000);
+  const active = await deps.db.all<{ day: string; kind: string; n: number }>(
+    'SELECT day, kind, COUNT(*) AS n FROM daily_activity WHERE day >= ? GROUP BY day, kind',
+    from
+  );
+  const fresh = await deps.db.all<{ first_seen: number }>('SELECT first_seen FROM installs WHERE first_seen >= ?', Date.parse(`${from}T00:00:00Z`));
+  const out: Stats['days'] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = dayKey(now - i * 86_400_000);
+    const phones = active.find((a) => a.day === day && a.kind === 'phone')?.n ?? 0;
+    const pcs = active.find((a) => a.day === day && a.kind === 'pc')?.n ?? 0;
+    out.push({ day, users: phones + pcs, phones, pcs, newUsers: fresh.filter((f) => dayKey(f.first_seen) === day).length });
+  }
+  // versions of everyone seen in the last 30 days
+  const versions = await deps.db.all<{ version: string; kind: string; users: number }>(
+    'SELECT app_version AS version, kind, COUNT(*) AS users FROM installs WHERE last_seen >= ? GROUP BY app_version, kind',
+    now - 30 * 86_400_000
+  );
+  versions.sort((a, b) => compareVersions(b.version, a.version) || a.kind.localeCompare(b.kind));
+  const count = async (sql: string, ...p: number[]) => (await deps.db.first<{ n: number }>(sql, ...p))?.n ?? 0;
+  return {
+    days: out,
+    versions,
+    totals: {
+      users: await count('SELECT COUNT(*) AS n FROM installs'),
+      phones: await count("SELECT COUNT(*) AS n FROM installs WHERE kind = 'phone'"),
+      pcs: await count("SELECT COUNT(*) AS n FROM installs WHERE kind = 'pc'"),
+      active7: await count('SELECT COUNT(*) AS n FROM installs WHERE last_seen >= ?', now - 7 * 86_400_000),
+      active30: await count('SELECT COUNT(*) AS n FROM installs WHERE last_seen >= ?', now - 30 * 86_400_000)
+    }
+  };
+}
+
 const InstallUpdateSchema = z.object({ installId: InstallId, blocked: z.boolean().optional(), admin: z.literal(false).optional() }).strict();
 
 export interface AppConfig {
@@ -185,6 +229,14 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         now,
         now
       );
+      await deps.db.run(
+        `INSERT INTO daily_activity (day, install_id, kind, app_version) VALUES (?, ?, ?, ?)
+         ON CONFLICT(day, install_id) DO UPDATE SET kind = excluded.kind, app_version = excluded.app_version`,
+        dayKey(now),
+        c.installId,
+        c.kind,
+        c.appVersion
+      );
       const inst = await deps.db.first<{ blocked: number; admin: number }>('SELECT blocked, admin FROM installs WHERE id = ?', c.installId);
       const cfg = await getConfig(deps.db);
       const admin = inst?.admin === 1;
@@ -256,6 +308,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
             admin: i.admin === 1
           }))
         });
+      }
+
+      case 'GET /v1/admin/stats': {
+        const days = Math.min(STATS_DAYS_MAX, Math.max(7, Number(url.searchParams.get('days')) || 30));
+        return json(await stats(deps, days));
       }
 
       case 'POST /v1/admin/config': {

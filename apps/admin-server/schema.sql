@@ -14,3 +14,5 @@ CREATE TABLE IF NOT EXISTS installs (
 CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS admin_tokens (token_hash TEXT PRIMARY KEY, install_id TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS attempts (key TEXT PRIMARY KEY, count INTEGER NOT NULL, window_start INTEGER NOT NULL);
+-- one row per install per active day (UTC), for the admin statistics; no IPs
+CREATE TABLE IF NOT EXISTS daily_activity (day TEXT NOT NULL, install_id TEXT NOT NULL, kind TEXT NOT NULL, app_version TEXT NOT NULL, PRIMARY KEY (day, install_id));

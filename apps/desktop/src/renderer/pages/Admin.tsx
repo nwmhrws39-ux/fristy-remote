@@ -3,6 +3,7 @@ import { Crown, KeyRound, Laptop, LogOut, Megaphone, RefreshCw, Smartphone } fro
 import { errorText, invoke, type CoreState } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
+import { AdminStats } from './AdminStats';
 import { Badge, Button, Card, Empty, ErrorNote, Field, Toggle, cx, inputClass } from '../components/ui';
 
 interface Overview {
@@ -37,10 +38,12 @@ export function Admin({ state }: { state: CoreState }) {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const load = useCallback(async () => {
     try {
       setData(await invoke<Overview>('owner.overview'));
+      setRefreshKey((k) => k + 1);
       setSignedIn(true);
       setError(null);
     } catch (e) {
@@ -93,7 +96,7 @@ export function Admin({ state }: { state: CoreState }) {
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" icon={<RefreshCw className="size-4" />} onClick={() => void load()}>
-            ↻
+            {t('common.refresh')}
           </Button>
           <Button variant="ghost" icon={<LogOut className="size-4" />} onClick={() => void invoke('owner.logout').then(() => setSignedIn(false))}>
             {t('owner.logout')}
@@ -101,6 +104,7 @@ export function Admin({ state }: { state: CoreState }) {
         </div>
       </header>
       <ErrorNote>{error}</ErrorNote>
+      {data && <AdminStats refreshKey={refreshKey} />}
       {data && <AdminBody data={data} save={save} reload={load} onError={setError} />}
     </div>
   );
@@ -196,9 +200,10 @@ function SignIn({ onDone }: { onDone: () => void }) {
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            void act.run(() => invoke('owner.login', { code })).then((r) => {
+            // login resolves with no value, so map success to `true` explicitly
+            void act.run(() => invoke('owner.login', { code }).then(() => true)).then((ok) => {
               setCode('');
-              if (r !== undefined) onDone();
+              if (ok) onDone();
             });
           }}
         >

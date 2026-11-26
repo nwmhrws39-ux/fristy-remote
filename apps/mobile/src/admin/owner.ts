@@ -159,6 +159,14 @@ export async function hasAdminToken(): Promise<boolean> {
 
 export const getOverview = () => request<Overview>('GET', '/v1/admin/overview', undefined, true);
 
+export interface OwnerStats {
+  days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
+  versions: { version: string; kind: string; users: number }[];
+  totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
+}
+
+export const getStats = (days: number) => request<OwnerStats>('GET', `/v1/admin/stats?days=${days}`, undefined, true);
+
 export const setConfig = (c: Partial<Overview['config']>) => request<{ config: Overview['config'] }>('POST', '/v1/admin/config', c, true);
 
 export const updateInstall = (installId: string, patch: { blocked?: boolean; admin?: false }) =>

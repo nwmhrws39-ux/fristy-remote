@@ -136,3 +136,27 @@ it('compares versions', () => {
   expect(compareVersions('1.0.0', '0.9.9')).toBe(1);
   expect(compareVersions('0.1.0', '0.1.0')).toBe(0);
 });
+
+describe('statistics', () => {
+  it('counts daily users, new users and versions without personal data', async () => {
+    const token = await becomeAdmin();
+    const DAY = 86_400_000;
+    now = Date.parse('2026-11-20T10:00:00Z');
+    await checkin(FRIEND, 'Dani', '0.2.10');
+    await checkin(FRIEND, 'Dani', '0.2.10'); // same day counts once
+    now += DAY;
+    await checkin(FRIEND, 'Dani', '0.2.11');
+    await call('POST', '/v1/checkin', { installId: 'pc-install-00000003', name: 'PC', kind: 'pc', platform: 'win32', appVersion: '0.2.11' });
+    const r = await call('GET', '/v1/admin/stats?days=7', undefined, token);
+    expect(r.status).toBe(200);
+    const s = r.body as unknown as import('../src/api').Stats;
+    expect(s.days).toHaveLength(7);
+    const last = s.days.at(-1)!;
+    expect(last).toMatchObject({ day: '2026-11-21', users: 2, phones: 1, pcs: 1, newUsers: 1 });
+    expect(s.days.at(-2)).toMatchObject({ day: '2026-11-20', users: 1, newUsers: 1 });
+    expect(s.versions[0]).toMatchObject({ version: '0.2.11' });
+    expect(s.totals.users).toBe(3);
+    expect(JSON.stringify(s)).not.toMatch(/Dani|install/);
+    expect((await call('GET', '/v1/admin/stats', undefined, 'f'.repeat(64))).status).toBe(401);
+  });
+});

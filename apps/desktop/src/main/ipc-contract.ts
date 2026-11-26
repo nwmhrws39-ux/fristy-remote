@@ -69,6 +69,7 @@ export const IPC = {
   'owner.refresh': none,
   'owner.overview': none,
   'owner.hasToken': none,
+  'owner.stats': z.object({ days: z.number().int().min(7).max(90) }).strict(),
   'owner.config': z
     .object({
       locked: z.boolean().optional(),

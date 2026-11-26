@@ -16,12 +16,23 @@ function d1(db: D1Database): Db {
   };
 }
 
+// Databases created before the statistics feature get the new table on first use.
+let schemaReady = false;
+async function ensureSchema(db: D1Database) {
+  if (schemaReady) return;
+  await db
+    .prepare('CREATE TABLE IF NOT EXISTS daily_activity (day TEXT NOT NULL, install_id TEXT NOT NULL, kind TEXT NOT NULL, app_version TEXT NOT NULL, PRIMARY KEY (day, install_id))')
+    .run();
+  schemaReady = true;
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     // The caller's IP is only used, hashed, as a rate-limit key – it is never stored or shown.
     const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
     const country = (req as Request & { cf?: { country?: string } }).cf?.country ?? null;
     try {
+      await ensureSchema(env.DB);
       return await handle(req, {
         db: d1(env.DB),
         adminCode: env.ADMIN_CODE ?? '',

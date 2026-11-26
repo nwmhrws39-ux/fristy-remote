@@ -104,10 +104,7 @@ export function PowerScreen() {
       <Card title={t('power.wake')} right={<Sunrise color={c.accent} size={20} />}>
         {host?.mac ? (
           <>
-            <Muted>
-              MAC {host.mac}
-              {host.broadcast ? ` · ${host.broadcast}` : ''}
-            </Muted>
+            <Muted>{t('wol.ready')}</Muted>
             <Button
               style={{ marginTop: spacing.md }}
               label={t('power.wake')}

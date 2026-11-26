@@ -23,6 +23,15 @@ export function isTailscaleIPv4(ip: string): boolean {
   return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
 }
 
+/** Describes an address without revealing it: home network, Tailscale or other. */
+export function addressKind(ip: string | null | undefined): 'home' | 'remote' | 'relay' | 'other' {
+  if (!ip) return 'other';
+  if (ip === 'relay') return 'relay';
+  if (isTailscaleIPv4(ip)) return 'remote';
+  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|::1$|169\.254\.)/.test(ip)) return 'home';
+  return 'other';
+}
+
 /** Computes the IPv4 directed broadcast address for an address/netmask pair. */
 export function broadcastAddress(ip: string, netmask: string): string | null {
   const a = ip.split('.').map(Number);

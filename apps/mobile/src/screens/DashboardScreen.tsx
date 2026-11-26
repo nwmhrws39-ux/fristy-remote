@@ -25,7 +25,7 @@ export function DashboardScreen() {
             <Text style={{ color: c.text, fontSize: font.h1, fontWeight: '800', textAlign: align }}>{s.host?.name ?? '—'}</Text>
             <Muted>
               {online
-                ? `${t('common.online')} · ${s.route === 'relay' ? 'Internet relay' : s.route === 'tailscale' ? 'Tailscale' : 'LAN'}`
+                ? `${t('common.online')} · ${t(s.route === 'relay' ? 'route.relay' : s.route === 'tailscale' ? 'route.remote' : 'route.home')}`
                 : s.status === 'unauthorized'
                   ? s.error ?? ''
                   : `${t('common.connecting')} ${s.error ? `(${s.error})` : ''}`}

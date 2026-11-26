@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { isTailscaleIPv4 } from '@fristy/shared';
+import { addressKind, isTailscaleIPv4 } from '@fristy/shared';
 import type { FristyCore } from '../core';
 
 export interface DiagnosticCheck {
@@ -7,6 +7,8 @@ export interface DiagnosticCheck {
   label: string;
   status: 'ok' | 'warn' | 'error' | 'info';
   detail: string;
+  /** addresses and other technical details, only shown on request */
+  technical?: string;
 }
 
 /** Connection diagnostics shown in Settings → Diagnostics. Every check is real, nothing is assumed. */
@@ -62,9 +64,14 @@ export async function runDiagnostics(core: FristyCore): Promise<DiagnosticCheck[
 
   checks.push({
     id: 'network',
-    label: 'LAN addresses',
-    status: st.addresses.length ? 'ok' : 'error',
-    detail: st.addresses.length ? st.addresses.join(', ') : 'No IPv4 network connection'
+    label: 'Network',
+    status: st.addresses.some((a) => addressKind(a) === 'home') ? 'ok' : st.addresses.length ? 'warn' : 'error',
+    detail: st.addresses.some((a) => addressKind(a) === 'home')
+      ? 'Connected to the home network'
+      : st.addresses.length
+        ? 'No home network adapter found'
+        : 'No network connection',
+    technical: st.addresses.join(', ') || undefined
   });
 
   const ts = st.addresses.find(isTailscaleIPv4);
@@ -73,8 +80,9 @@ export async function runDiagnostics(core: FristyCore): Promise<DiagnosticCheck[
     label: 'Tailscale (away from home)',
     status: ts ? 'ok' : 'info',
     detail: ts
-      ? `Reachable from your Tailscale devices at ${ts}:${st.port}. Re-open the phone app once at home so it learns this address.`
-      : 'Not detected. Install Tailscale on this PC and your phone (same account) to use FRISTY Remote away from home.'
+      ? 'Reachable from your Tailscale devices. Open the phone app once at home so it learns the route.'
+      : 'Not detected. Install Tailscale on this PC and your phone (same account) to use FRISTY Remote away from home.',
+    technical: ts ? `${ts}:${st.port}` : undefined
   });
 
   checks.push({
@@ -124,7 +132,10 @@ export async function runDiagnostics(core: FristyCore): Promise<DiagnosticCheck[
     id: 'sessions',
     label: 'Active connections',
     status: 'info',
-    detail: st.sessions.length ? st.sessions.map((s) => `${s.deviceName} (${s.kind}, ${s.remote})`).join('; ') : 'None'
+    detail: st.sessions.length
+      ? st.sessions.map((s) => `${s.deviceName} (${s.kind === 'relay' ? 'relay' : addressKind(s.remote) === 'remote' ? 'remote' : 'home'})`).join('; ')
+      : 'None',
+    technical: st.sessions.length ? st.sessions.map((s) => `${s.deviceName}: ${s.remote}`).join('; ') : undefined
   });
   return checks;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { Monitor, Plus, Trash2 } from 'lucide-react-native';
-import { LANGUAGES, decodeBase64, fingerprint } from '@fristy/shared';
+import { LANGUAGES, addressKind, decodeBase64, fingerprint } from '@fristy/shared';
 import { ACCENTS, font, radius, spacing, type AccentName } from '@fristy/ui';
 import { useApp } from '../theme';
 import { connection, type ProbeResult } from '../connection/manager';
@@ -31,6 +31,7 @@ export function SettingsScreen({ onAddComputer, onHostsChanged }: { onAddCompute
   const [myKey, setMyKey] = useState('');
   const [probe, setProbe] = useState<ProbeResult[] | null>(null);
   const [probing, setProbing] = useState(false);
+  const [details, setDetails] = useState(false);
   useEffect(() => {
     void loadHosts().then(setHosts);
     void getIdentity().then((k) => setMyKey(fingerprint(k.publicKey)));
@@ -54,9 +55,11 @@ export function SettingsScreen({ onAddComputer, onHostsChanged }: { onAddCompute
             <Pressable style={{ flex: 1 }} onPress={() => void connection.connect(h)}>
               <Text style={{ color: c.text, fontWeight: '700' }}>{h.name}</Text>
               <Muted>
-                {h.lastAddress ?? h.hosts[0]}
-                {h.relayUrl ? ' · relay' : ''}
-                {conn.host?.pk === h.pk ? ` · ${conn.status}` : ''}
+                {conn.host?.pk === h.pk
+                  ? conn.status === 'online'
+                    ? `${t('common.online')} · ${t(conn.route === 'relay' ? 'route.relay' : conn.route === 'tailscale' ? 'route.remote' : 'route.home')}`
+                    : t('common.connecting')
+                  : t('common.offline')}
               </Muted>
             </Pressable>
             <Pressable onPress={() => setForget(h)} hitSlop={8} accessibilityLabel={t('settings.forget')}>
@@ -107,10 +110,9 @@ export function SettingsScreen({ onAddComputer, onHostsChanged }: { onAddCompute
       <Card title={t('settings.diagnostics')}>
         <Muted>Status: {conn.status}{conn.error ? ` (${conn.error})` : ''}</Muted>
         <Muted>Network: {conn.network ?? '—'}</Muted>
-        <Muted>Addresses: {conn.host ? [...new Set([conn.host.lastAddress, ...conn.host.hosts].filter(Boolean))].join(', ') : '—'}</Muted>
         {conn.attempts.length > 0 && <Muted>Last attempt:</Muted>}
         {conn.attempts.map((a, i) => (
-          <Muted key={i}>{`${a.ok ? '✓' : '✗'} ${a.address} · ${a.ms} ms${a.error ? ` · ${a.error}` : ''}`}</Muted>
+          <Muted key={i}>{`${a.ok ? '✓' : '✗'} ${details ? a.address : t(`route.${addressKind(a.address)}`)} · ${a.ms} ms${a.error ? ` · ${a.error}` : ''}`}</Muted>
         ))}
         <Button style={{ marginTop: spacing.md }} variant="subtle" label="Test connection" busy={probing} onPress={async () => {
           setProbing(true);
@@ -118,9 +120,13 @@ export function SettingsScreen({ onAddComputer, onHostsChanged }: { onAddCompute
           setProbing(false);
         }} />
         {probe?.map((p) => (
-          <Muted key={p.address}>{`${p.ok ? '✓' : '✗'} ${p.kind} ${p.address} · ${p.detail} · ${p.ms} ms`}</Muted>
+          <Muted key={p.address}>{`${p.ok ? '✓' : '✗'} ${t(`route.${addressKind(p.address)}`)}${details ? ` ${p.address}` : ''} · ${p.detail} · ${p.ms} ms`}</Muted>
         ))}
-        <Muted>Route: {conn.route ?? '—'} · {t('dash.latency')}: {conn.latency != null ? `${conn.latency} ms` : 'N/A'}</Muted>
+        {details && conn.host && <Muted>{[...new Set([conn.host.lastAddress, ...conn.host.hosts].filter(Boolean))].join(', ')}</Muted>}
+        <Pressable onPress={() => setDetails((d) => !d)} style={{ paddingVertical: 6 }}>
+          <Text style={{ color: c.accent, fontWeight: '700', fontSize: font.small }}>{details ? t('common.hideDetails') : t('common.showDetails')}</Text>
+        </Pressable>
+        <Muted>{t('dash.latency')}: {conn.latency != null ? `${conn.latency} ms` : 'N/A'}</Muted>
         <Muted>PC key: {conn.host ? fingerprint(decodeBase64(conn.host.pk)) : '—'}</Muted>
         <Muted>This phone: {myKey}</Muted>
         <Button style={{ marginTop: spacing.md }} variant="ghost" label={t('common.retry')} onPress={() => connection.reconnectNow()} />

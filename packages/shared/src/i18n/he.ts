@@ -208,5 +208,13 @@ export const he: Record<StringKey, string> = {
   'tools.black': 'מסך שחור',
   'files.openOnPc': 'פתיחה במחשב',
   'dash.battery': 'סוללה',
+  'route.home': 'רשת ביתית',
+  'route.remote': 'מרחוק (Tailscale)',
+  'route.relay': 'ממסר אינטרנט',
+  'route.other': 'רשת אחרת',
+  'common.showDetails': 'הצג פרטים טכניים',
+  'common.hideDetails': 'הסתר פרטים טכניים',
+  'status.ready': 'מוכן לחיבורים',
+  'wol.ready': 'Wake-on-LAN מוגדר עבור המחשב הזה.',
   'dash.charging': 'בטעינה'
 };

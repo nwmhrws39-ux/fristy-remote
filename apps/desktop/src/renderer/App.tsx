@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { DEFAULT_GRANTS, type Permission } from '@fristy/protocol';
 import type { StringKey } from '@fristy/shared/src/i18n';
+import { addressKind } from '@fristy/shared/src/wol';
 import { invoke, onPairingRequest, onState, type CoreState, type PendingPairing } from './lib/api';
 import { I18nProvider, useI18n } from './lib/i18n';
 import { Badge, Button, Logo, Modal, StatusDot, cx } from './components/ui';
@@ -111,7 +112,7 @@ function Shell({ state }: { state: CoreState }) {
             {online ? t('common.online') : t('common.offline')}
           </div>
           <div className="mt-1 text-muted">
-            {state.settings.remoteEnabled ? (state.listening ? `${state.addresses[0] ?? '—'}:${state.port}` : state.listenError) : t('settings.remoteAccess') + ' · ' + t('common.disabled')}
+            {state.settings.remoteEnabled ? (state.listening ? t('status.ready') : state.listenError) : t('settings.remoteAccess') + ' · ' + t('common.disabled')}
           </div>
           {inputActive && (
             <div className="mt-2">
@@ -175,7 +176,7 @@ function PairingRequestDialog({ request, onDone }: { request: PendingPairing | n
           {request.sas.slice(0, 3)} {request.sas.slice(3)}
         </div>
         <div className="mt-2 text-[11px] text-faint" dir="ltr">
-          {request.remote} · key {request.fingerprint}
+          {t(`route.${addressKind(request.remote)}` as StringKey)} · key {request.fingerprint}
         </div>
       </div>
       <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">{t('pair.grant')}</div>

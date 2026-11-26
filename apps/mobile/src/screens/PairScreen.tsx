@@ -183,9 +183,7 @@ function ManualPair({ onStart, onBack }: { onStart: (t: PairTarget) => void; onB
               <Monitor color={selected?.pk === h.pk ? c.accent : c.textMuted} size={22} />
               <View style={{ flex: 1 }}>
                 <Text style={{ color: c.text, fontWeight: '700' }}>{h.name}</Text>
-                <Muted>
-                  {h.address} {h.pairing ? '' : '· no active pairing code'}
-                </Muted>
+                {!h.pairing && <Muted>no active pairing code</Muted>}
               </View>
             </View>
           </Pressable>

@@ -206,6 +206,14 @@ export const en = {
   'tools.black': 'Black screen',
   'files.openOnPc': 'Open on PC',
   'dash.battery': 'Battery',
+  'route.home': 'Home network',
+  'route.remote': 'Remote (Tailscale)',
+  'route.relay': 'Internet relay',
+  'route.other': 'Other network',
+  'common.showDetails': 'Show technical details',
+  'common.hideDetails': 'Hide technical details',
+  'status.ready': 'Ready for connections',
+  'wol.ready': 'Wake-on-LAN is set up for this computer.',
   'dash.charging': 'charging'
 } as const;
 

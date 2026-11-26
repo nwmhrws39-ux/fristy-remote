@@ -7,6 +7,7 @@ import {
   formatBytes,
   formatPercent,
   formatTemp,
+  addressKind,
   isTailscaleIPv4,
   normalizeMac,
   translate
@@ -54,6 +55,12 @@ describe('Wake-on-LAN', () => {
     expect(isTailscaleIPv4('100.63.0.1')).toBe(false);
     expect(isTailscaleIPv4('100.128.0.1')).toBe(false);
     expect(isTailscaleIPv4('192.168.1.30')).toBe(false);
+  });
+  it('describes addresses without exposing them', () => {
+    expect(addressKind('192.168.1.84')).toBe('home');
+    expect(addressKind('100.111.47.61')).toBe('remote');
+    expect(addressKind('relay')).toBe('relay');
+    expect(addressKind('26.235.163.111')).toBe('other');
   });
   it('computes broadcast addresses', () => {
     expect(broadcastAddress('192.168.1.23', '255.255.255.0')).toBe('192.168.1.255');

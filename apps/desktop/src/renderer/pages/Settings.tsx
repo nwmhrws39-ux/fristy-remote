@@ -143,6 +143,7 @@ function LauncherCard({ s, set }: { s: S; set: (p: Partial<S>) => void }) {
 function Diagnostics() {
   const { t } = useI18n();
   const [checks, setChecks] = useState<DiagnosticCheck[] | null>(null);
+  const [details, setDetails] = useState(false);
   const act = useAction();
   const icon = { ok: CheckCircle2, warn: CircleAlert, error: XCircle, info: Info };
   const color = { ok: 'text-ok', warn: 'text-warn', error: 'text-bad', info: 'text-muted' };
@@ -156,11 +157,23 @@ function Diagnostics() {
             <div key={c.id} className="flex items-start gap-3 py-2.5">
               <I className={cx('mt-0.5 size-4 shrink-0', color[c.status])} />
               <div className="w-44 shrink-0 text-sm font-semibold">{c.label}</div>
-              <div className="text-sm text-muted">{c.detail}</div>
+              <div className="text-sm text-muted">
+                {c.detail}
+                {details && c.technical && (
+                  <div className="mt-0.5 font-mono text-xs text-faint" dir="ltr">
+                    {c.technical}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
       </div>
+      {checks && (
+        <button className="mt-3 text-xs font-semibold text-accent" onClick={() => setDetails((d) => !d)}>
+          {details ? t('common.hideDetails') : t('common.showDetails')}
+        </button>
+      )}
       <ErrorNote>{act.error}</ErrorNote>
     </Card>
   );

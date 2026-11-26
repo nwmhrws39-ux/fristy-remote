@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Cpu, Gauge, HardDrive, MemoryStick, MousePointer2, Network, QrCode, RefreshCw, Timer, Wifi, X } from 'lucide-react';
 import type { SystemStats } from '@fristy/protocol';
 import { formatBytes, formatDuration, formatPercent, formatRate, formatTemp } from '@fristy/shared/src/format';
+import { addressKind } from '@fristy/shared/src/wol';
 import { invoke, type CoreState } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
@@ -222,7 +223,8 @@ function SessionsCard({ state, go }: { state: CoreState; go: (p: PageId) => void
             <div className="flex-1">
               <div className="text-sm font-semibold">{s.deviceName}</div>
               <div className="text-xs text-muted" dir="ltr">
-                {s.kind === 'relay' ? 'Internet relay' : s.remote} · {new Date(s.connectedAt).toLocaleTimeString()}
+                {t(s.kind === 'relay' ? 'route.relay' : addressKind(s.remote) === 'remote' ? 'route.remote' : addressKind(s.remote) === 'home' ? 'route.home' : 'route.other')} ·{' '}
+                {new Date(s.connectedAt).toLocaleTimeString()}
               </div>
             </div>
             {s.lastInputAt && Date.now() - s.lastInputAt < 5000 && (

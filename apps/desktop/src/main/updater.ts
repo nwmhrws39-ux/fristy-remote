@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { app } from 'electron';
-import electronUpdater from 'electron-updater';
+// Named import: the default import is undefined once bundled (CommonJS module with __esModule).
+import { autoUpdater } from 'electron-updater';
 
 /*
  * In-app updates from the public releases repository (see docs/UPDATES.md).
@@ -28,8 +29,15 @@ export class Updater extends EventEmitter<{ state: [UpdateState] }> {
 
   start() {
     if (!app.isPackaged) return; // dev builds never update themselves
-    const { autoUpdater } = electronUpdater;
     const current = app.getVersion();
+    try {
+      this.wire(current);
+    } catch (e) {
+      this.set({ status: 'error', current, error: (e as Error).message.slice(0, 200) });
+    }
+  }
+
+  private wire(current: string) {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('checking-for-update', () => this.set({ status: 'checking', current }));
@@ -52,7 +60,7 @@ export class Updater extends EventEmitter<{ state: [UpdateState] }> {
   async check() {
     if (this.state.status === 'disabled') return;
     try {
-      await electronUpdater.autoUpdater.checkForUpdates();
+      await autoUpdater.checkForUpdates();
     } catch {
       /* reported through the 'error' event */
     }
@@ -60,7 +68,7 @@ export class Updater extends EventEmitter<{ state: [UpdateState] }> {
 
   /** Quits and runs the downloaded installer (Windows asks for permission once). */
   install() {
-    if (this.state.status === 'ready') electronUpdater.autoUpdater.quitAndInstall(false, true);
+    if (this.state.status === 'ready') autoUpdater.quitAndInstall(false, true);
   }
 
   private set(s: UpdateState) {

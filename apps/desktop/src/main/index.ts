@@ -9,6 +9,7 @@ import { createUnsupportedPlatform } from '../core/platform/unsupported';
 import { createWindowsPlatform } from '../core/platform/windows';
 import type { Platform } from '../core/platform/types';
 import { registerIpc } from './ipc';
+import { DEFAULT_ADMIN_API_URL } from '@fristy/shared';
 
 /*
  * FRISTY Remote – Electron main process.
@@ -243,7 +244,7 @@ app.whenReady().then(async () => {
     appVersion: app.getVersion(),
     sqlWasmPath: path.join(__dirname, 'sql-wasm.wasm'),
     desktop: desktopBridge,
-    ownerApiUrl: process.env.FRISTY_ADMIN_API_URL ?? '',
+    ownerApiUrl: process.env.FRISTY_ADMIN_API_URL || DEFAULT_ADMIN_API_URL,
     launcherToken: () => secrets.get('launcher-token'),
     iconFor: async (exe) => {
       try {

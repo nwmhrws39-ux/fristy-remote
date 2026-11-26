@@ -4,3 +4,4 @@ export * from './wol';
 export * from './format';
 export * from './client';
 export * from './i18n';
+export * from './owner-config';

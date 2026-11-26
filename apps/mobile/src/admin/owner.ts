@@ -1,6 +1,7 @@
 import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
+import { DEFAULT_ADMIN_API_URL } from '@fristy/shared';
 import { readJson, remove, writeJson } from '../store/secure';
 
 /*
@@ -10,7 +11,7 @@ import { readJson, remove, writeJson } from '../store/secure';
  * app version. Never IP addresses, files, screens or keystrokes.
  */
 
-const API = (process.env.EXPO_PUBLIC_ADMIN_API_URL ?? '').replace(/\/+$/, '');
+const API = (process.env.EXPO_PUBLIC_ADMIN_API_URL || DEFAULT_ADMIN_API_URL).replace(/\/+$/, '');
 export const ownerEnabled = /^https:\/\/[^\s/]+/.test(API);
 
 export interface OwnerStatus {

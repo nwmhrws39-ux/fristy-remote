@@ -20,7 +20,26 @@ The lock is enforced by the apps (phone lock screen + PCs refusing connections).
 A determined user who rebuilds the app from source could remove it – it is an
 owner control for builds you distribute, not DRM.
 
-## One-time setup (about 10 minutes)
+## Quickest setup (from your computer, ~5 minutes)
+
+1. Sign up free at dash.cloudflare.com and open *Workers & Pages* once.
+2. In the repository folder:
+
+   ```
+   git pull
+   npm install
+   cd apps/admin-server
+   npx wrangler login
+   node setup.mjs
+   ```
+
+   `wrangler login` opens the browser – click **Allow**. `setup.mjs` creates the
+   database, deploys the server and asks for your admin code (typed hidden).
+3. Put the printed `https://….workers.dev` address into
+   `packages/shared/src/owner-config.ts` (or give it to whoever maintains the build)
+   and rebuild the apps.
+
+## Setup through GitHub Actions (alternative)
 
 1. **Cloudflare account** – sign up free at dash.cloudflare.com. Open
    *Workers & Pages* once so Cloudflare creates your `workers.dev` subdomain.

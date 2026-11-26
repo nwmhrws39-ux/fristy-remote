@@ -160,3 +160,14 @@ describe('statistics', () => {
     expect((await call('GET', '/v1/admin/stats', undefined, 'f'.repeat(64))).status).toBe(401);
   });
 });
+
+it('admins can remove an install and its history', async () => {
+  const token = await becomeAdmin();
+  await checkin(FRIEND, 'CI runner');
+  expect((await call('POST', '/v1/admin/install', { installId: OWNER, remove: true }, token)).status).toBe(400);
+  expect((await call('POST', '/v1/admin/install', { installId: FRIEND, remove: true }, token)).status).toBe(200);
+  const o = await call('GET', '/v1/admin/overview', undefined, token);
+  expect((o.body.installs as { id: string }[]).map((i) => i.id)).toEqual([OWNER]);
+  const st = await call('GET', '/v1/admin/stats', undefined, token);
+  expect((st.body as { totals: { users: number } }).totals.users).toBe(1);
+});

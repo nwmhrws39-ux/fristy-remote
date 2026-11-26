@@ -169,7 +169,7 @@ export const getStats = (days: number) => request<OwnerStats>('GET', `/v1/admin/
 
 export const setConfig = (c: Partial<Overview['config']>) => request<{ config: Overview['config'] }>('POST', '/v1/admin/config', c, true);
 
-export const updateInstall = (installId: string, patch: { blocked?: boolean; admin?: false }) =>
+export const updateInstall = (installId: string, patch: { blocked?: boolean; admin?: false; remove?: true }) =>
   request<{ ok: true }>('POST', '/v1/admin/install', { installId, ...patch }, true);
 
 export async function adminLogout() {

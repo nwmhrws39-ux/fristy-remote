@@ -196,7 +196,7 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
     return this.admin<{ config: AdminOverview['config'] }>('POST', '/v1/admin/config', c);
   }
 
-  updateInstall(installId: string, patch: { blocked?: boolean }) {
+  updateInstall(installId: string, patch: { blocked?: boolean; remove?: true }) {
     return this.admin<{ ok: true }>('POST', '/v1/admin/install', { installId, ...patch });
   }
 

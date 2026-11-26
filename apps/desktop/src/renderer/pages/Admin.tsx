@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Crown, KeyRound, Laptop, LogOut, Megaphone, RefreshCw, Smartphone } from 'lucide-react';
+import { Crown, KeyRound, Laptop, LogOut, Megaphone, RefreshCw, Smartphone, Trash2 } from 'lucide-react';
 import { errorText, invoke, type CoreState } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
@@ -173,6 +173,16 @@ function AdminBody({ data, save, reload, onError }: { data: Overview; save: (p: 
                 >
                   {i.blocked ? t('owner.unblock') : t('owner.block')}
                 </Button>
+              )}
+              {i.id !== data.you && !i.admin && (
+                <Button
+                  variant="ghost"
+                  aria-label={t('owner.remove')}
+                  icon={<Trash2 className="size-4" />}
+                  onClick={() => {
+                    if (confirm(`${t('owner.remove')}: ${i.name}?`)) void invoke('owner.install', { installId: i.id, remove: true }).then(reload, (e) => onError(errorText(e)));
+                  }}
+                />
               )}
             </div>
           ))}

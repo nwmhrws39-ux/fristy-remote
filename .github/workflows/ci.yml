@@ -27,6 +27,9 @@ jobs:
           sudo apt-get update && sudo apt-get install -y xvfb
           npm run build -w @fristy/desktop
           xvfb-run -a node tests/e2e/electron-smoke.mjs
+        env:
+          # keep test machines out of the real owner service (and its banners out of the test)
+          FRISTY_ADMIN_API_URL: 'off'
       - name: Bundle mobile app (Metro, Android + iOS)
         working-directory: apps/mobile
         run: |

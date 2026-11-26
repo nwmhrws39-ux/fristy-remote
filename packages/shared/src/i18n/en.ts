@@ -250,6 +250,7 @@ export const en = {
   'owner.unblock': 'Unblock',
   'owner.onlineNow': 'online now',
   'owner.lastSeen': 'last seen',
+  'owner.remove': 'Remove from list',
   'owner.stats': 'Statistics',
   'owner.dailyUsers': 'Users per day',
   'owner.newUsers': 'New users',

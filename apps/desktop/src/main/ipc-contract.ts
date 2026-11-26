@@ -78,7 +78,7 @@ export const IPC = {
       minVersion: z.string().regex(/^(\d+\.\d+\.\d+)?$/).optional()
     })
     .strict(),
-  'owner.install': z.object({ installId: z.string().min(1).max(80), blocked: z.boolean() }).strict(),
+  'owner.install': z.object({ installId: z.string().min(1).max(80), blocked: z.boolean().optional(), remove: z.literal(true).optional() }).strict(),
   'owner.logout': none,
   'update.state': none,
   'update.check': none,

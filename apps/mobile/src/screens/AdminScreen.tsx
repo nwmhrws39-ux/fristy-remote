@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Switch, Text, View } from 'react-native';
-import { Crown, Laptop, LogOut, Smartphone } from 'lucide-react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, Switch, Text, View } from 'react-native';
+import { Crown, Laptop, LogOut, Smartphone, Trash2 } from 'lucide-react-native';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
 import { adminLogout, getOverview, getStats, setConfig, updateInstall, type Overview, type OwnerStats } from '../admin/owner';
@@ -115,6 +115,20 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
                     style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.md, backgroundColor: i.blocked ? c.success + '22' : c.danger + '22' }}
                   >
                     <Text style={{ color: i.blocked ? c.success : c.danger, fontWeight: '700', fontSize: font.small }}>{i.blocked ? t('owner.unblock') : t('owner.block')}</Text>
+                  </Pressable>
+                )}
+                {i.id !== data.you && !i.admin && (
+                  <Pressable
+                    accessibilityLabel={t('owner.remove')}
+                    hitSlop={8}
+                    onPress={() =>
+                      Alert.alert(t('owner.remove'), i.name, [
+                        { text: t('common.cancel'), style: 'cancel' },
+                        { text: t('owner.remove'), style: 'destructive', onPress: () => void updateInstall(i.id, { remove: true }).then(load, (e: Error) => setError(e.message)) }
+                      ])
+                    }
+                  >
+                    <Trash2 color={c.textFaint} size={18} />
                   </Pressable>
                 )}
               </View>

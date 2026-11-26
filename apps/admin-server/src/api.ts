@@ -106,7 +106,7 @@ async function stats(deps: Deps, days: number): Promise<Stats> {
   };
 }
 
-const InstallUpdateSchema = z.object({ installId: InstallId, blocked: z.boolean().optional(), admin: z.literal(false).optional() }).strict();
+const InstallUpdateSchema = z.object({ installId: InstallId, blocked: z.boolean().optional(), admin: z.literal(false).optional(), remove: z.literal(true).optional() }).strict();
 
 export interface AppConfig {
   locked: boolean;
@@ -329,7 +329,14 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       case 'POST /v1/admin/install': {
         const p = InstallUpdateSchema.safeParse(body);
         if (!p.success) return fail(400, 'invalid request');
-        if (p.data.installId === adminId && (p.data.blocked || p.data.admin === false)) return fail(400, 'you cannot block or demote yourself');
+        if (p.data.installId === adminId && (p.data.blocked || p.data.admin === false || p.data.remove)) return fail(400, 'you cannot block, demote or remove yourself');
+        if (p.data.remove) {
+          // removes the entry and its history; an app that is still in use simply checks in again
+          await deps.db.run('DELETE FROM admin_tokens WHERE install_id = ?', p.data.installId);
+          await deps.db.run('DELETE FROM daily_activity WHERE install_id = ?', p.data.installId);
+          await deps.db.run('DELETE FROM installs WHERE id = ?', p.data.installId);
+          return json({ ok: true });
+        }
         if (p.data.blocked !== undefined) await deps.db.run('UPDATE installs SET blocked = ? WHERE id = ?', p.data.blocked ? 1 : 0, p.data.installId);
         if (p.data.admin === false) {
           await deps.db.run('UPDATE installs SET admin = 0 WHERE id = ?', p.data.installId);

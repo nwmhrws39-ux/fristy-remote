@@ -252,6 +252,7 @@ export const he: Record<StringKey, string> = {
   'owner.unblock': 'ביטול חסימה',
   'owner.onlineNow': 'מחובר עכשיו',
   'owner.lastSeen': 'נראה לאחרונה',
+  'owner.remove': 'הסר מהרשימה',
   'owner.stats': 'סטטיסטיקות',
   'owner.dailyUsers': 'משתמשים בכל יום',
   'owner.newUsers': 'משתמשים חדשים',

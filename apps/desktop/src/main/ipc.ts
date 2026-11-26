@@ -109,7 +109,8 @@ export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl
     'owner.hasToken': () => core.owner.hasToken(),
     'owner.stats': (p: { days: number }) => core.owner.stats(p.days),
     'owner.config': (p: Record<string, unknown>) => core.owner.setConfig(p),
-    'owner.install': (p: { installId: string; blocked: boolean }) => core.owner.updateInstall(p.installId, { blocked: p.blocked }),
+    'owner.install': (p: { installId: string; blocked?: boolean; remove?: true }) =>
+      core.owner.updateInstall(p.installId, p.remove ? { remove: true } : { blocked: p.blocked }),
     'owner.logout': () => core.owner.logout(),
     'update.state': () => updater.state,
     'update.check': () => updater.check(),

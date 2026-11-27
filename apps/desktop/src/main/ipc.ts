@@ -118,6 +118,8 @@ export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl
     'owner.inviteCreate': (p: { maxUses: number; note: string }) => core.owner.createInvite(p.maxUses, p.note),
     'owner.inviteDelete': (p: { code: string }) => core.owner.deleteInvite(p.code),
     'owner.notifyTest': () => core.owner.notifyTest(),
+    'owner.limits': () => core.owner.limits(),
+    'owner.limitReset': (p: { installId?: string; id?: string }) => core.owner.resetLimit(p),
     'owner.redeem': (p: { code: string }) => core.owner.redeemInvite(p.code),
     'owner.logout': () => core.owner.logout(),
     'update.state': () => updater.state,

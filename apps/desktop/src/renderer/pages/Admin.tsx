@@ -60,6 +60,7 @@ interface Overview {
   betaVersions: { pc: string; ios: string };
   invites: { code: string; note: string; maxUses: number; uses: number; createdAt: number }[];
   installs: Install[];
+  limits: Limit[];
 }
 
 type Save = (p: Partial<Config>) => Promise<void>;
@@ -72,6 +73,7 @@ function normalize(o: Omit<Partial<Overview>, 'config'> & { config?: Partial<Con
     you: o.you ?? '',
     betaVersions: { pc: o.betaVersions?.pc ?? '', ios: o.betaVersions?.ios ?? '' },
     invites: Array.isArray(o.invites) ? o.invites : [],
+    limits: Array.isArray(o.limits) ? o.limits : [],
     installs: (Array.isArray(o.installs) ? o.installs : []).map((i) => ({ ...i, pending: !!i.pending, beta: !!i.beta, message: i.message ?? '' })),
     config: {
       locked: !!c.locked,
@@ -115,7 +117,11 @@ export function Admin({ state }: { state: CoreState }) {
 
   const load = useCallback(async () => {
     try {
-      setData(normalize(await invoke<Overview>('owner.overview')));
+      const [o, l] = await Promise.all([
+        invoke<Overview>('owner.overview'),
+        invoke<{ limits: Limit[] }>('owner.limits').catch(() => ({ limits: [] as Limit[] }))
+      ]);
+      setData(normalize({ ...o, limits: l.limits }));
       setRefreshKey((k) => k + 1);
       setSignedIn(true);
       setError(null);
@@ -156,7 +162,7 @@ export function Admin({ state }: { state: CoreState }) {
   };
   const act = (p: Promise<unknown>) => void p.then(load, (e) => setError(friendlyOwnerError(errorText(e), t)));
   const online = data?.installs.filter((i) => i.online).length ?? 0;
-  const pending = data?.installs.filter((i) => i.pending).length ?? 0;
+  const pending = (data?.installs.filter((i) => i.pending).length ?? 0) + (data?.limits.length ?? 0);
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: 'stats', label: t('owner.stats') },
@@ -214,12 +220,48 @@ export function Admin({ state }: { state: CoreState }) {
 
 /* ---------------- users ---------------- */
 
+interface Limit {
+  id: string;
+  installId: string | null;
+  name: string | null;
+  kind: 'admin' | 'invite';
+  attempts: number;
+  resetAt: number;
+}
+
+/** Devices that typed a wrong admin/invite code too often – the owner decides whether to lift it. */
+function Limits({ limits, act }: { limits: Limit[]; act: (p: Promise<unknown>) => void }) {
+  const { t } = useI18n();
+  if (!limits.length) return null;
+  return (
+    <Card className="mb-6 border-warn/50" title={`⛔ ${t('owner.limits')}`}>
+      <p className="mb-3 text-sm text-muted">{t('owner.limitsHint')}</p>
+      <div className="space-y-2">
+        {limits.map((l) => (
+          <div key={l.id} className="flex items-center gap-3 rounded-xl bg-elevated px-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold" dir="auto">
+                {l.name ?? t('owner.unknownDevice')} <Badge tone={l.kind === 'admin' ? 'bad' : 'warn'}>{l.kind === 'admin' ? t('owner.limitAdmin') : t('owner.limitInvite')}</Badge>
+              </div>
+              <div className="text-xs text-faint">{t('owner.limitResetsIn', { n: l.attempts, m: Math.max(1, Math.ceil((l.resetAt - Date.now()) / 60_000)) })}</div>
+            </div>
+            <Button onClick={() => act(invoke('owner.limitReset', l.installId ? { installId: l.installId } : { id: l.id }))}>{t('owner.limitReset')}</Button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function Users({ data, act }: { data: Overview; act: (p: Promise<unknown>) => void }) {
   const { t } = useI18n();
   const [messageFor, setMessageFor] = useState<Install | null>(null);
   const sorted = [...data.installs].sort((a, b) => Number(b.pending) - Number(a.pending));
   const install = (installId: string, patch: Record<string, unknown>) => act(invoke('owner.install', { installId, ...patch }));
+  const limited = new Set(data.limits.map((l) => l.installId));
   return (
+    <>
+    <Limits limits={data.limits} act={act} />
     <Card title={`👥 ${t('owner.users')}`}>
       {data.installs.length === 0 && <Empty>{t('common.none')}</Empty>}
       <div className="divide-y divide-line">
@@ -239,6 +281,7 @@ function Users({ data, act }: { data: Overview; act: (p: Promise<unknown>) => vo
                   {i.pending && <Badge tone="warn">{t('owner.pending')}</Badge>}
                   {i.beta && !i.admin && <Badge tone="accent">β {t('owner.betaTester')}</Badge>}
                   {i.blocked && <Badge tone="bad">{t('owner.block')}</Badge>}
+                  {limited.has(i.id) && <Badge tone="warn">⛔ {t('owner.limitBadge')}</Badge>}
                 </div>
                 <div className="text-xs text-faint">
                   {flag(i.country)} {i.platform} · v{i.appVersion} · {i.online ? t('owner.onlineNow') : `${t('owner.lastSeen')} ${ago(i.lastSeen)}`}
@@ -280,6 +323,7 @@ function Users({ data, act }: { data: Overview; act: (p: Promise<unknown>) => vo
       </div>
       <MessageDialog install={messageFor} onClose={() => setMessageFor(null)} onSend={(text) => messageFor && install(messageFor.id, { message: text })} />
     </Card>
+    </>
   );
 }
 

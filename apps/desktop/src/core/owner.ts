@@ -375,6 +375,14 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
     return this.admin<{ ok: true }>('POST', '/v1/admin/invite/delete', { code });
   }
 
+  limits() {
+    return this.admin<{ limits: { id: string; installId: string | null; name: string | null; kind: 'admin' | 'invite'; attempts: number; resetAt: number }[] }>('GET', '/v1/admin/limits');
+  }
+
+  resetLimit(p: { installId?: string; id?: string }) {
+    return this.admin<{ ok: true }>('POST', '/v1/admin/limits/reset', p);
+  }
+
   notifyTest() {
     return this.admin<{ ok: true }>('POST', '/v1/admin/notify-test', {});
   }

@@ -40,7 +40,7 @@ export interface Deps {
 }
 
 /** bump when the API changes, so the owner can check what is deployed */
-export const SERVER_VERSION = 4;
+export const SERVER_VERSION = 5;
 
 const ONLINE_MS = 20 * 60_000;
 const DAY_MS = 86_400_000;
@@ -207,8 +207,9 @@ async function adminFromToken(req: Request, deps: Deps): Promise<string | null> 
 }
 
 /** Fixed-window limiter stored in D1. Returns false when the caller is over the limit. */
-async function allowAttempt(deps: Deps, key: string, max: number, windowMs: number): Promise<boolean> {
+async function allowAttempt(deps: Deps, key: string, max: number, windowMs: number, installId?: string): Promise<boolean> {
   const now = deps.now();
+  if (installId) await deps.db.run('INSERT INTO attempt_installs (key, install_id) VALUES (?, ?) ON CONFLICT(key, install_id) DO NOTHING', key, installId);
   const row = await deps.db.first<{ count: number; window_start: number }>('SELECT count, window_start FROM attempts WHERE key = ?', key);
   if (!row || now - row.window_start > windowMs) {
     await deps.db.run('INSERT INTO attempts (key, count, window_start) VALUES (?, 1, ?) ON CONFLICT(key) DO UPDATE SET count = 1, window_start = excluded.window_start', key, now);
@@ -230,6 +231,41 @@ async function installName(db: Db, id: string): Promise<string> {
 
 async function ensureExtra(db: Db, id: string) {
   await db.run('INSERT INTO install_extra (install_id) VALUES (?) ON CONFLICT(install_id) DO NOTHING', id);
+}
+
+/* ---------------- attempt limits ---------------- */
+
+export interface AttemptLimit {
+  /** install that hit the limit, or null when it cannot be told (e.g. before checking in) */
+  installId: string | null;
+  name: string | null;
+  kind: 'admin' | 'invite';
+  attempts: number;
+  resetAt: number;
+  keys: string[];
+}
+
+/** Everyone who is currently blocked from trying a code, grouped per install. */
+async function activeLimits(deps: Deps): Promise<AttemptLimit[]> {
+  const now = deps.now();
+  const rows = await deps.db.all<{ key: string; count: number; window_start: number }>('SELECT * FROM attempts WHERE window_start > ?', now - LOGIN_WINDOW_MS);
+  const links = await deps.db.all<{ key: string; install_id: string }>('SELECT * FROM attempt_installs');
+  const names = new Map((await deps.db.all<{ id: string; name: string }>('SELECT id, name FROM installs')).map((r) => [r.id, r.name]));
+  const out = new Map<string, AttemptLimit>();
+  for (const r of rows) {
+    const kind = r.key.startsWith('invite:') ? 'invite' : 'admin';
+    if (r.count < (kind === 'invite' ? INVITE_MAX_ATTEMPTS : LOGIN_MAX_ATTEMPTS)) continue;
+    const ids = r.key.startsWith('login-install:') ? [r.key.slice('login-install:'.length)] : links.filter((l) => l.key === r.key).map((l) => l.install_id);
+    for (const id of ids.length ? ids : [null]) {
+      const k = `${kind}|${id ?? r.key}`;
+      const e = out.get(k) ?? { installId: id, name: id ? (names.get(id) ?? null) : null, kind, attempts: 0, resetAt: 0, keys: [] };
+      e.attempts = Math.max(e.attempts, r.count);
+      e.resetAt = Math.max(e.resetAt, r.window_start + LOGIN_WINDOW_MS);
+      e.keys.push(r.key);
+      out.set(k, e);
+    }
+  }
+  return [...out.values()].sort((a, b) => b.resetAt - a.resetAt);
 }
 
 /* ---------------- statistics ---------------- */
@@ -356,7 +392,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       let inviteError: string | null = null;
       if (!invited && c.invite) {
         const code = InviteCode.safeParse(c.invite);
-        if (!(await allowAttempt(deps, `invite:${deps.clientKey}`, INVITE_MAX_ATTEMPTS, LOGIN_WINDOW_MS))) inviteError = 'too many attempts, try again later';
+        if (!(await allowAttempt(deps, `invite:${deps.clientKey}`, INVITE_MAX_ATTEMPTS, LOGIN_WINDOW_MS, c.installId))) inviteError = 'too many attempts, try again later';
         else if (!code.success) inviteError = 'wrong invite code';
         else {
           const inv = await deps.db.first<{ max_uses: number; uses: number }>('SELECT max_uses, uses FROM invites WHERE code = ?', code.data);
@@ -406,7 +442,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (!deps.adminCode) return fail(503, 'admin code not configured');
       const p = LoginSchema.safeParse(body);
       if (!p.success) return fail(400, 'invalid request');
-      if (!(await allowAttempt(deps, `login:${deps.clientKey}`, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS)) || !(await allowAttempt(deps, `login-install:${p.data.installId}`, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS))) {
+      if (
+        !(await allowAttempt(deps, `login:${deps.clientKey}`, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, p.data.installId)) ||
+        !(await allowAttempt(deps, `login-install:${p.data.installId}`, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, p.data.installId))
+      ) {
         return fail(429, 'too many attempts, try again later');
       }
       const ok = safeEqual(await sha256Hex(p.data.code), await sha256Hex(deps.adminCode));
@@ -477,6 +516,31 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       case 'GET /v1/admin/stats': {
         const days = Math.min(STATS_DAYS_MAX, Math.max(7, Number(url.searchParams.get('days')) || 30));
         return json(await stats(deps, days));
+      }
+
+      case 'GET /v1/admin/limits': {
+        // keys are hashes; never shown, only used to lift a limit
+        const limits = await activeLimits(deps);
+        return json({ limits: await Promise.all(limits.map(async ({ keys, ...l }) => ({ ...l, id: (await sha256Hex(keys.join(','))).slice(0, 16) }))) });
+      }
+
+      case 'POST /v1/admin/limits/reset': {
+        const p = z.object({ installId: InstallId.optional(), id: z.string().regex(/^[a-f0-9]{16}$/).optional() }).strict().safeParse(body);
+        if (!p.success || (!p.data.installId && !p.data.id)) return fail(400, 'invalid request');
+        const limits = await activeLimits(deps);
+        const ids = await Promise.all(limits.map(async (l) => (await sha256Hex(l.keys.join(','))).slice(0, 16)));
+        const match = limits.filter((l, i) => (p.data.installId ? l.installId === p.data.installId : ids[i] === p.data.id));
+        const keys = new Set(match.flatMap((l) => l.keys));
+        if (p.data.installId) {
+          keys.add(`login-install:${p.data.installId}`);
+          for (const l of await deps.db.all<{ key: string }>('SELECT key FROM attempt_installs WHERE install_id = ?', p.data.installId)) keys.add(l.key);
+        }
+        for (const k of keys) {
+          await deps.db.run('DELETE FROM attempts WHERE key = ?', k);
+          await deps.db.run('DELETE FROM attempt_installs WHERE key = ?', k);
+        }
+        await audit(deps, adminId, 'limits.reset', p.data.installId ?? '');
+        return json({ ok: true, cleared: keys.size });
       }
 
       case 'GET /v1/admin/log': {

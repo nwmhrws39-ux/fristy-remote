@@ -97,6 +97,8 @@ export const IPC = {
   'owner.inviteCreate': z.object({ maxUses: z.number().int().min(1).max(1000), note: z.string().max(60) }).strict(),
   'owner.inviteDelete': z.object({ code: z.string().min(4).max(16) }).strict(),
   'owner.notifyTest': none,
+  'owner.limits': none,
+  'owner.limitReset': z.object({ installId: z.string().min(1).max(80).optional(), id: z.string().max(32).optional() }).strict(),
   'owner.redeem': z.object({ code: z.string().min(1).max(32) }).strict(),
   'owner.logout': none,
   'update.state': none,

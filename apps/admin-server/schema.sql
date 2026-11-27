@@ -20,3 +20,5 @@ CREATE TABLE IF NOT EXISTS daily_activity (day TEXT NOT NULL, install_id TEXT NO
 CREATE TABLE IF NOT EXISTS install_extra (install_id TEXT PRIMARY KEY, invited INTEGER NOT NULL DEFAULT 0, beta INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '', message_at INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, note TEXT NOT NULL DEFAULT '', max_uses INTEGER NOT NULL, uses INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS admin_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '');
+-- which install made rate-limited attempts (so the owner can see and lift a limit)
+CREATE TABLE IF NOT EXISTS attempt_installs (key TEXT NOT NULL, install_id TEXT NOT NULL, PRIMARY KEY (key, install_id));

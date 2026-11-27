@@ -297,7 +297,7 @@ describe('new owner features', () => {
 
 it('shows the deployed version at the root address', async () => {
   const r = await call('GET', '/');
-  expect(r.body).toMatchObject({ ok: true, version: 4 });
+  expect(r.body).toMatchObject({ ok: true, version: 5 });
 });
 
 it('pings running apps when the owner changes something', async () => {
@@ -311,4 +311,29 @@ it('pings running apps when the owner changes something', async () => {
   await call('POST', '/v1/admin/invite', { maxUses: 1 }, token, { changed }); // invisible to apps
   await call('POST', '/v1/admin/config', { notifyTopic: 'fristy-abcdefghijkl' }, token, { changed }); // invisible to apps
   expect(pings).toEqual([undefined, FRIEND]);
+});
+
+describe('attempt limits', () => {
+  it('shows who is blocked from trying codes and lets the owner lift it', async () => {
+    const token = await becomeAdmin();
+    await checkin(FRIEND, 'Dani');
+    for (let i = 0; i < 5; i++) await call('POST', '/v1/admin/login', { installId: FRIEND, code: `guess-${i}` }, undefined, { clientKey: 'friend-net' });
+    const blocked = await call('POST', '/v1/admin/login', { installId: FRIEND, code: 'again' }, undefined, { clientKey: 'friend-net' });
+    expect(blocked.status).toBe(429);
+
+    const r = await call('GET', '/v1/admin/limits', undefined, token);
+    const limits = r.body.limits as { installId: string; name: string; kind: string; attempts: number; resetAt: number; id: string }[];
+    expect(limits).toHaveLength(1);
+    expect(limits[0]).toMatchObject({ installId: FRIEND, name: 'Dani', kind: 'admin', attempts: 5 });
+    expect(limits[0]!.resetAt).toBe(now + 60 * 60_000);
+    expect(JSON.stringify(r.body)).not.toContain('friend-net'); // no raw network key
+
+    expect((await call('POST', '/v1/admin/limits/reset', { installId: FRIEND }, token)).status).toBe(200);
+    expect((await call('GET', '/v1/admin/limits', undefined, token)).body.limits).toEqual([]);
+    // can try again (still wrong code → 403, not 429)
+    expect((await call('POST', '/v1/admin/login', { installId: FRIEND, code: 'x' }, undefined, { clientKey: 'friend-net' })).status).toBe(403);
+    const log = (await call('GET', '/v1/admin/log', undefined, token)).body.entries as { action: string; target: string }[];
+    expect(log.find((e) => e.action === 'limits.reset')).toMatchObject({ target: 'Dani' });
+    expect((await call('GET', '/v1/admin/limits')).status).toBe(401);
+  });
 });

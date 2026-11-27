@@ -21,6 +21,9 @@ import {
   type LogEntry,
   type Overview,
   type OwnerStats,
+  type AttemptLimit,
+  getLimits,
+  resetLimit,
   serverOutdated
 } from '../admin/owner';
 import { Button, Card, ErrorText, Input, Muted, Pill, Title } from '../components/ui';
@@ -46,6 +49,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
   const [data, setData] = useState<Overview | null>(null);
   const [stats, setStats] = useState<OwnerStats | null>(null);
   const [log, setLog] = useState<LogEntry[] | null>(null);
+  const [limits, setLimits] = useState<AttemptLimit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('stats');
@@ -56,6 +60,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
       setData(await getOverview());
       setError(null);
       void getStats(14).then(setStats, () => setStats(null));
+      void getLimits().then((r) => setLimits(r.limits), () => setLimits([]));
       void getLog().then((r) => setLog(r.entries), () => setLog([]));
     } catch (e) {
       setError((e as Error).message);
@@ -83,7 +88,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
   const act = (p: Promise<unknown>) => void p.then(load, (e: Error) => setError(e.message));
 
   const online = data?.installs.filter((i) => i.online).length ?? 0;
-  const pending = data?.installs.filter((i) => i.pending).length ?? 0;
+  const pending = (data?.installs.filter((i) => i.pending).length ?? 0) + limits.length;
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: 'stats', label: '📊' },
     { id: 'users', label: `👥`, badge: pending },
@@ -123,7 +128,8 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
 
       <ErrorBoundary key={tab}>
       {data && tab === 'stats' && (stats ? <StatsCard stats={stats} /> : <Muted>{serverOutdated ? '—' : '…'}</Muted>)}
-      {data && tab === 'users' && <UsersCard data={data} act={act} />}
+      {data && tab === 'users' && <LimitsCard limits={limits} act={act} />}
+      {data && tab === 'users' && <UsersCard data={data} act={act} limited={new Set(limits.map((l) => l.installId ?? ''))} />}
       {data && tab === 'controls' && <Controls data={data} save={save} act={act} />}
       {tab === 'log' && <LogCard entries={log} />}
       </ErrorBoundary>
@@ -144,7 +150,29 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
 
 /* ---------------- users ---------------- */
 
-function UsersCard({ data, act }: { data: Overview; act: (p: Promise<unknown>) => void }) {
+/** Devices that typed a wrong admin/invite code too often – the owner decides whether to lift it. */
+function LimitsCard({ limits, act }: { limits: AttemptLimit[]; act: (p: Promise<unknown>) => void }) {
+  const { c, t, row } = useApp();
+  if (!limits.length) return null;
+  return (
+    <Card title={`⛔ ${t('owner.limits')}`} style={{ borderColor: c.warning }}>
+      <Muted>{t('owner.limitsHint')}</Muted>
+      {limits.map((l) => (
+        <View key={l.id} style={{ flexDirection: row, alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm, backgroundColor: c.bgElevated, borderRadius: radius.md, padding: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.text, fontWeight: '700' }}>
+              {l.name ?? t('owner.unknownDevice')} · <Text style={{ color: l.kind === 'admin' ? c.danger : c.warning }}>{l.kind === 'admin' ? t('owner.limitAdmin') : t('owner.limitInvite')}</Text>
+            </Text>
+            <Text style={{ color: c.textFaint, fontSize: font.tiny }}>{t('owner.limitResetsIn', { n: l.attempts, m: Math.max(1, Math.ceil((l.resetAt - Date.now()) / 60_000)) })}</Text>
+          </View>
+          <Chip label={t('owner.limitReset')} tone={c.success} onPress={() => act(resetLimit(l.installId ? { installId: l.installId } : { id: l.id }))} />
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function UsersCard({ data, act, limited }: { data: Overview; act: (p: Promise<unknown>) => void; limited: Set<string> }) {
   const { c, t, row } = useApp();
   const [messageFor, setMessageFor] = useState<InstallInfo | null>(null);
   const sorted = [...data.installs].sort((a, b) => Number(b.pending) - Number(a.pending));
@@ -167,6 +195,7 @@ function UsersCard({ data, act }: { data: Overview; act: (p: Promise<unknown>) =
                   {i.pending && <Pill tone="warn">{t('owner.pending')}</Pill>}
                   {i.beta && !i.admin && <Pill tone="accent">β</Pill>}
                   {i.blocked && <Pill tone="bad">{t('owner.block')}</Pill>}
+                  {limited.has(i.id) && <Pill tone="warn">⛔</Pill>}
                 </View>
                 <Text style={{ color: c.textFaint, fontSize: font.tiny }}>
                   {flag(i.country)} {i.platform} · v{i.appVersion} · {i.online ? t('owner.onlineNow') : `${t('owner.lastSeen')} ${ago(i.lastSeen)}`}

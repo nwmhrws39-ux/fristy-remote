@@ -358,6 +358,16 @@ export const getLog = () => request<{ entries: LogEntry[] }>('GET', '/v1/admin/l
 export const releaseToEveryone = () => request<{ config: AdminConfig }>('POST', '/v1/admin/release', {}, true);
 export const createInvite = (maxUses: number, note: string) => request<{ code: string }>('POST', '/v1/admin/invite', { maxUses, note }, true);
 export const deleteInvite = (code: string) => request<{ ok: true }>('POST', '/v1/admin/invite/delete', { code }, true);
+export interface AttemptLimit {
+  id: string;
+  installId: string | null;
+  name: string | null;
+  kind: 'admin' | 'invite';
+  attempts: number;
+  resetAt: number;
+}
+export const getLimits = () => request<{ limits: AttemptLimit[] }>('GET', '/v1/admin/limits', undefined, true);
+export const resetLimit = (p: { installId?: string; id?: string }) => request<{ ok: true }>('POST', '/v1/admin/limits/reset', p, true);
 export const notifyTest = () => request<{ ok: true }>('POST', '/v1/admin/notify-test', {}, true);
 
 export const updateInstall = (installId: string, patch: { blocked?: boolean; admin?: false; remove?: true; approve?: true; beta?: boolean; message?: string }) =>

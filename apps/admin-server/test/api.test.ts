@@ -179,7 +179,7 @@ describe('new owner features', () => {
   it('keeps schema.sql and the worker schema identical', async () => {
     const { SCHEMA_SQL } = await import('../src/schema');
     expect(SCHEMA_SQL).toBe(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
-    const { schemaStatements } = await import('../src/worker');
+    const { schemaStatements } = await import('../src/schema');
     expect(schemaStatements(SCHEMA_SQL).every((s) => s.startsWith('CREATE TABLE IF NOT EXISTS'))).toBe(true);
   });
 
@@ -297,5 +297,18 @@ describe('new owner features', () => {
 
 it('shows the deployed version at the root address', async () => {
   const r = await call('GET', '/');
-  expect(r.body).toMatchObject({ ok: true, version: 3 });
+  expect(r.body).toMatchObject({ ok: true, version: 4 });
+});
+
+it('pings running apps when the owner changes something', async () => {
+  const pings: (string | undefined)[] = [];
+  const changed = (id?: string) => void pings.push(id);
+  const token = await becomeAdmin();
+  await checkin(FRIEND);
+  await call('POST', '/v1/admin/config', { locked: true }, token, { changed });
+  await call('POST', '/v1/admin/config', { locked: true }, token, { changed }); // no change → no ping
+  await call('POST', '/v1/admin/install', { installId: FRIEND, message: 'hi' }, token, { changed });
+  await call('POST', '/v1/admin/invite', { maxUses: 1 }, token, { changed }); // invisible to apps
+  await call('POST', '/v1/admin/config', { notifyTopic: 'fristy-abcdefghijkl' }, token, { changed }); // invisible to apps
+  expect(pings).toEqual([undefined, FRIEND]);
 });

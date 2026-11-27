@@ -7,3 +7,13 @@ compatibility_date = "2025-10-01"
 binding = "DB"
 database_name = "fristy-admin"
 database_id = "__DATABASE_ID__"
+
+# Live updates: apps keep a WebSocket to this hub; admin changes are pushed instantly.
+# (SQLite-backed Durable Objects are included in the free plan.)
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "LiveHub"
+
+[[migrations]]
+tag = "live-hub-v1"
+new_sqlite_classes = ["LiveHub"]

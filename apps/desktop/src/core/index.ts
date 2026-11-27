@@ -40,6 +40,8 @@ export interface CoreOptions {
   ownerApiUrl?: string;
   fetchImpl?: typeof fetch;
   ownerTokenStore?: { get(): string | null; set(token: string | null): void };
+  /** live owner updates over WebSocket (default on) */
+  ownerLive?: boolean;
 }
 
 export interface PairingView {
@@ -108,7 +110,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       platform: process.platform,
       appVersion: /^\d+\.\d+\.\d+$/.test(opts.appVersion) ? opts.appVersion : '0.0.0',
       fetchImpl: opts.fetchImpl,
-      tokenStore: opts.ownerTokenStore
+      tokenStore: opts.ownerTokenStore,
+      live: opts.ownerLive
     });
     this.procs = new ProcessCache(opts.platform);
     const launcher = () => {

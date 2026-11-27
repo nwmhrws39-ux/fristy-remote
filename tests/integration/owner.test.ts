@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import http from 'node:http';
+import { WebSocketServer, type WebSocket as WsSocket } from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RemoteError } from '@fristy/shared';
 import { handle, type Db } from '../../apps/admin-server/src/api';
@@ -47,7 +49,8 @@ async function startOwnedCore(svc: ReturnType<typeof ownerService>) {
     computerName: 'FRIEND-PC',
     discovery: false,
     ownerApiUrl: 'https://owner.test',
-    fetchImpl: svc.fetchImpl
+    fetchImpl: svc.fetchImpl,
+    ownerLive: false
   });
   core.settings.update({ port: await freePort() });
   await core.start();
@@ -115,5 +118,90 @@ describe('owner lock', () => {
     });
     cores.push(core);
     expect(core.state().owner.enabled).toBe(false);
+  });
+});
+
+describe('live owner updates', () => {
+  it('a lock and a personal message reach a running PC instantly, without a restart', async () => {
+    // Real HTTP + WebSocket owner service on localhost (the hub sends only "refresh").
+    const sql = new DatabaseSync(':memory:');
+    sql.exec(fs.readFileSync(path.join(__dirname, '../../apps/admin-server/schema.sql'), 'utf8'));
+    const db: Db = {
+      first: async (q, ...p) => (sql.prepare(q).get(...p) as never) ?? null,
+      all: async (q, ...p) => sql.prepare(q).all(...p) as never[],
+      run: async (q, ...p) => {
+        sql.prepare(q).run(...p);
+      }
+    };
+    const sockets = new Map<WsSocket, string>();
+    const changed = (target?: string) => {
+      for (const [ws, id] of sockets) if (!target || id === target) ws.send('refresh');
+    };
+    const deps = { db, adminCode: 'code-123456', now: () => Date.now(), country: 'IL', clientKey: 'k', changed };
+    const server = http.createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const out = await handle(new Request(`http://x${req.url}`, { method: req.method, headers: req.headers as never, body: req.method === 'POST' ? Buffer.concat(chunks) : undefined }), deps);
+      res.writeHead(out.status, { 'Content-Type': 'application/json' });
+      res.end(await out.text());
+    });
+    const wss = new WebSocketServer({ noServer: true });
+    server.on('upgrade', (req, socket, head) => {
+      const id = new URL(req.url ?? '', 'http://x').searchParams.get('installId') ?? '';
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        sockets.set(ws, id);
+        ws.on('message', (m) => m.toString() === 'ping' && ws.send('pong'));
+        ws.on('close', () => sockets.delete(ws));
+      });
+    });
+    const port = await freePort();
+    await new Promise<void>((r) => server.listen(port, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${port}`;
+    const api = async (method: string, p: string, body?: unknown, token?: string) =>
+      (await (await fetch(base + p, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined })).json()) as Record<string, unknown>;
+
+    try {
+      const pc = await FristyCore.create({
+        dataDir: null,
+        platform: fakePlatform(),
+        identity: generateKeyPair(),
+        identityPersisted: true,
+        appVersion: '0.1.0',
+        computerName: 'LIVE-PC',
+        discovery: false,
+        ownerApiUrl: base
+      });
+      pc.settings.update({ port: await freePort() });
+      await pc.start();
+      cores.push(pc);
+      const until = async (ok: () => boolean, ms = 3000) => {
+        const end = Date.now() + ms;
+        while (!ok()) {
+          if (Date.now() > end) throw new Error('timed out');
+          await new Promise((r) => setTimeout(r, 25));
+        }
+      };
+      await until(() => sockets.size === 1 && pc.state().owner.lastCheck !== null);
+
+      await api('POST', '/v1/checkin', { installId: 'owner-phone-000001', name: 'Owner', kind: 'phone', platform: 'ios', appVersion: '0.1.0' });
+      const { token } = (await api('POST', '/v1/admin/login', { installId: 'owner-phone-000001', code: 'code-123456' })) as { token: string };
+
+      const t0 = Date.now();
+      await api('POST', '/v1/admin/config', { locked: true, lockMessage: 'Paused' }, token);
+      await until(() => pc.state().owner.locked);
+      expect(Date.now() - t0).toBeLessThan(1500);
+      expect(pc.state().owner.message).toBe('Paused');
+
+      await api('POST', '/v1/admin/config', { locked: false }, token);
+      await until(() => !pc.state().owner.locked);
+
+      await api('POST', '/v1/admin/install', { installId: pc.owner.installId, message: 'Hi there' }, token);
+      await until(() => pc.state().owner.personal?.text === 'Hi there');
+    } finally {
+      for (const c of cores.splice(0)) await c.stop();
+      for (const ws of sockets.keys()) ws.terminate();
+      wss.close();
+      server.close();
+    }
   });
 });

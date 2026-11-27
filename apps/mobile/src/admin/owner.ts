@@ -117,7 +117,27 @@ export const ownerStore = {
   get: () => status
 };
 
+let maintTimers: ReturnType<typeof setTimeout>[] = [];
+
+/** Check in exactly when a scheduled maintenance window starts and ends. */
+function scheduleMaintenance(m: OwnerStatus['maintenance']) {
+  for (const t of maintTimers) clearTimeout(t);
+  maintTimers = [];
+  if (!m) return;
+  for (const at of [m.start, m.end + 1000]) {
+    const delay = at - Date.now();
+    if (delay > 0 && delay < 7 * 24 * 60 * 60_000)
+      maintTimers.push(
+        setTimeout(() => {
+          set({ ...status }); // re-render: the lock screen appears/disappears on time
+          void checkIn();
+        }, delay)
+      );
+  }
+}
+
 function set(s: OwnerStatus) {
+  if (JSON.stringify(s.maintenance) !== JSON.stringify(status.maintenance) || !maintTimers.length) scheduleMaintenance(s.maintenance);
   status = s;
   for (const l of listeners) l();
 }
@@ -198,7 +218,68 @@ export async function redeemInvite(code: string): Promise<void> {
   if (r.inviteError) throw new Error(r.inviteError);
 }
 
-/** Loads the cached status and starts periodic check-ins. */
+/*
+ * Live channel: while the app is open it holds a WebSocket to the owner
+ * service. The service only ever sends "refresh" (no data) and the app then
+ * checks in, so a lock or a message shows up within a second.
+ */
+let ws: WebSocket | null = null;
+let liveRetry: ReturnType<typeof setTimeout> | null = null;
+let liveBackoff = 2000;
+let liveWanted = false;
+
+async function connectLive() {
+  if (!liveWanted || ws || !ownerEnabled) return;
+  const id = await installId();
+  const sock = new WebSocket(`${API.replace(/^http/, 'ws')}/v1/live?installId=${encodeURIComponent(id)}`);
+  ws = sock;
+  let ping: ReturnType<typeof setInterval> | null = null;
+  let refresh: ReturnType<typeof setTimeout> | null = null;
+  let alive = true;
+  sock.onopen = () => {
+    liveBackoff = 2000;
+    void checkIn(); // catch up on anything missed
+    ping = setInterval(() => {
+      if (!alive) return sock.close();
+      alive = false;
+      try {
+        sock.send('ping');
+      } catch {
+        /* closing */
+      }
+    }, 25_000);
+  };
+  sock.onmessage = (e) => {
+    alive = true;
+    if (e.data === 'refresh') {
+      if (refresh) clearTimeout(refresh);
+      refresh = setTimeout(() => void checkIn(), 150);
+    }
+  };
+  sock.onerror = () => undefined;
+  sock.onclose = () => {
+    if (ping) clearInterval(ping);
+    if (ws === sock) ws = null;
+    if (!liveWanted) return;
+    liveRetry = setTimeout(() => void connectLive(), liveBackoff);
+    liveBackoff = Math.min(liveBackoff * 2, 5 * 60_000);
+  };
+}
+
+function setLive(on: boolean) {
+  liveWanted = on;
+  if (liveRetry) clearTimeout(liveRetry);
+  liveRetry = null;
+  if (on) {
+    liveBackoff = 2000;
+    void connectLive();
+  } else {
+    ws?.close();
+    ws = null;
+  }
+}
+
+/** Loads the cached status, connects the live channel and starts fallback check-ins. */
 export async function startOwner(getName: () => string) {
   userName = getName;
   if (!ownerEnabled) return;
@@ -206,8 +287,18 @@ export async function startOwner(getName: () => string) {
   if (cached) set({ ...status, ...cached, checked: true });
   void checkIn();
   if (!timer) {
-    timer = setInterval(() => void checkIn(), 15 * 60_000);
-    AppState.addEventListener('change', (s) => s === 'active' && void checkIn());
+    // fallback only: with the live channel open, changes arrive instantly
+    timer = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) void checkIn();
+    }, 3 * 60_000);
+    AppState.addEventListener('change', (s) => {
+      // iOS suspends background apps anyway: close the socket there, reconnect (and catch up) on return
+      if (s === 'active') {
+        void checkIn();
+        setLive(true);
+      } else if (s === 'background') setLive(false);
+    });
+    setLive(true);
   }
 }
 

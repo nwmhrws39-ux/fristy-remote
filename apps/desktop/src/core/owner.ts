@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import WebSocket from 'ws';
 import { randomId } from '@fristy/shared';
 import type { Store } from './db';
 
@@ -39,6 +40,8 @@ export interface OwnerOptions {
   appVersion: string;
   fetchImpl?: typeof fetch;
   intervalMs?: number;
+  /** live updates over WebSocket (default on); tests turn it off */
+  live?: boolean;
   /** where the admin token is kept (OS-encrypted in the app); in-memory when omitted */
   tokenStore?: { get(): string | null; set(token: string | null): void };
 }
@@ -117,6 +120,13 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
   status: OwnerStatus;
   private timer: NodeJS.Timeout | null = null;
   private readonly fetchImpl: typeof fetch;
+  private ws: WebSocket | null = null;
+  private liveRetry: NodeJS.Timeout | null = null;
+  private liveBackoff = 2000;
+  private liveConnected = false;
+  private maintTimers: NodeJS.Timeout[] = [];
+  private refreshSoon: NodeJS.Timeout | null = null;
+  private stopped = false;
   private memToken: string | null = null;
 
   constructor(private readonly opts: OwnerOptions) {
@@ -146,14 +156,92 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
 
   start() {
     if (!this.enabled || this.timer) return;
+    this.stopped = false;
     void this.checkIn();
-    this.timer = setInterval(() => void this.checkIn(), this.opts.intervalMs ?? 15 * 60_000);
+    // Periodic check-in is only a fallback: with the live channel up, changes arrive instantly.
+    this.timer = setInterval(() => {
+      if (!this.liveConnected || Date.now() - (this.status.lastCheck ?? 0) > 15 * 60_000) void this.checkIn();
+    }, this.opts.intervalMs ?? 3 * 60_000);
     this.timer.unref();
+    if (this.opts.live !== false) this.connectLive();
   }
 
   stop() {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.liveRetry) clearTimeout(this.liveRetry);
+    for (const t of this.maintTimers) clearTimeout(t);
+    this.ws?.terminate();
+    this.ws = null;
+  }
+
+  /**
+   * Live channel: a WebSocket to the owner service. The service only ever
+   * sends "refresh" (no data); this PC then checks in as usual, so a lock,
+   * message or announcement shows up within a second.
+   */
+  private connectLive() {
+    if (this.stopped || this.ws) return;
+    const url = this.url(`/v1/live?installId=${encodeURIComponent(this.installId)}`).replace(/^http/, 'ws');
+    const ws = new WebSocket(url, { handshakeTimeout: 10_000 });
+    this.ws = ws;
+    let alive = true;
+    let ping: NodeJS.Timeout | null = null;
+    ws.on('open', () => {
+      this.liveConnected = true;
+      this.liveBackoff = 2000;
+      void this.checkIn(); // catch up on anything missed while disconnected
+      ping = setInterval(() => {
+        if (!alive) return ws.terminate();
+        alive = false;
+        try {
+          ws.send('ping');
+        } catch {
+          /* closing */
+        }
+      }, 25_000);
+      ping.unref();
+    });
+    ws.on('message', (m) => {
+      alive = true;
+      if (m.toString() === 'refresh') {
+        if (this.refreshSoon) clearTimeout(this.refreshSoon);
+        this.refreshSoon = setTimeout(() => void this.checkIn(), 150);
+      }
+    });
+    ws.on('unexpected-response', (_req, res) => {
+      // an older owner service without live updates: try again much later
+      if (res.statusCode === 404 || res.statusCode === 501) this.liveBackoff = 30 * 60_000;
+    });
+    ws.on('error', () => undefined);
+    ws.on('close', () => {
+      if (ping) clearInterval(ping);
+      this.liveConnected = false;
+      if (this.ws === ws) this.ws = null;
+      if (this.stopped) return;
+      this.liveRetry = setTimeout(() => this.connectLive(), this.liveBackoff);
+      this.liveRetry.unref();
+      this.liveBackoff = Math.min(this.liveBackoff * 2, Math.max(this.liveBackoff, 5 * 60_000));
+    });
+  }
+
+  /** Check in exactly when a scheduled maintenance window starts and ends. */
+  private scheduleMaintenance(m: OwnerStatus['maintenance']) {
+    for (const t of this.maintTimers) clearTimeout(t);
+    this.maintTimers = [];
+    if (!m) return;
+    for (const at of [m.start, m.end + 1000]) {
+      const delay = at - Date.now();
+      if (delay > 0 && delay < 7 * 24 * 60 * 60_000) {
+        const t = setTimeout(() => {
+          this.emit('status', this.status); // local lock/unlock right away
+          void this.checkIn();
+        }, delay);
+        t.unref();
+        this.maintTimers.push(t);
+      }
+    }
   }
 
   async checkIn(invite?: string): Promise<OwnerStatus & { inviteError?: string | null }> {
@@ -297,6 +385,7 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
   }
 
   private update(s: OwnerStatus) {
+    if (JSON.stringify(s.maintenance) !== JSON.stringify(this.status.maintenance) || !this.maintTimers.length) this.scheduleMaintenance(s.maintenance);
     this.status = s;
     this.opts.store.setSetting('ownerStatus', s);
     this.emit('status', s);

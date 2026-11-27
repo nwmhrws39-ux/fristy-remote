@@ -35,10 +35,12 @@ export interface Deps {
   clientKey: string;
   /** sends a push notification to an ntfy topic (fire and forget) */
   notify?: (topic: string, title: string, message: string) => void;
+  /** tells running apps to check in now (all of them, or one install) */
+  changed?: (installId?: string) => void;
 }
 
 /** bump when the API changes, so the owner can check what is deployed */
-export const SERVER_VERSION = 3;
+export const SERVER_VERSION = 4;
 
 const ONLINE_MS = 20 * 60_000;
 const DAY_MS = 86_400_000;
@@ -532,7 +534,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           }
           await audit(deps, adminId, c.betaChannel ? 'beta.on' : 'beta.off');
         }
-        return json({ config: await getConfig(deps.db) });
+        const after = await getConfig(deps.db);
+        const visible = (x: AppConfig) =>
+          JSON.stringify([x.locked, x.lockMessage, x.announcement, x.minVersion, x.inviteRequired, x.maintenance, x.betaChannel, x.stablePc, x.stableIos]);
+        if (visible(before) !== visible(after)) deps.changed?.();
+        return json({ config: after });
       }
 
       case 'POST /v1/admin/release': {
@@ -543,6 +549,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         await setConfig(deps.db, 'stablePc', pc);
         await setConfig(deps.db, 'stableIos', ios);
         await audit(deps, adminId, 'release', '', `PC ${pc || '-'} · iPhone ${ios || '-'}`);
+        deps.changed?.();
         return json({ config: await getConfig(deps.db) });
       }
 
@@ -561,6 +568,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           await deps.db.run('DELETE FROM daily_activity WHERE install_id = ?', d.installId);
           await deps.db.run('DELETE FROM install_extra WHERE install_id = ?', d.installId);
           await deps.db.run('DELETE FROM installs WHERE id = ?', d.installId);
+          deps.changed?.(d.installId);
           return json({ ok: true });
         }
         if (d.blocked !== undefined) {
@@ -585,6 +593,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           await deps.db.run('UPDATE install_extra SET message = ?, message_at = ? WHERE install_id = ?', d.message, deps.now(), d.installId);
           await audit(deps, adminId, d.message ? 'message' : 'message.clear', d.installId, d.message);
         }
+        deps.changed?.(d.installId);
         return json({ ok: true });
       }
 

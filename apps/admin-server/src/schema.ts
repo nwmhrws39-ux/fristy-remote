@@ -22,3 +22,15 @@ CREATE TABLE IF NOT EXISTS install_extra (install_id TEXT PRIMARY KEY, invited I
 CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, note TEXT NOT NULL DEFAULT '', max_uses INTEGER NOT NULL, uses INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS admin_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '');
 `;
+
+/** Schema statements without comments (every statement is idempotent). */
+export function schemaStatements(sql: string): string[] {
+  return sql
+    .split('\n')
+    .map((l) => l.replace(/--.*$/, ''))
+    .join('\n')
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+

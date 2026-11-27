@@ -50,6 +50,9 @@ try {
   const win = await app.firstWindow();
   await win.waitForSelector('text=FRISTY', { timeout: 20_000 });
   step('main window rendered');
+  // The app defaults to Hebrew; the test drives the English UI.
+  await win.evaluate(() => window.fristy.invoke('settings.update', { language: 'en' }));
+  await win.waitForTimeout(300);
 
   // Security posture of the renderer.
   const exposure = await win.evaluate(() => ({ require: typeof window.require, process: typeof window.process, bridge: typeof window.fristy?.invoke }));

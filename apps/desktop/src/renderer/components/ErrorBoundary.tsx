@@ -20,12 +20,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: s
     if (!this.state.error) return this.props.children;
     return (
       <div className="rounded-2xl border border-bad/40 bg-bad/10 p-5 text-sm">
-        <div className="font-bold text-bad">Something went wrong on this page.</div>
+        <div className="font-bold text-bad">משהו השתבש בעמוד הזה · Something went wrong on this page.</div>
         <div className="mt-1 font-mono text-xs text-muted" dir="ltr">
           {this.state.error.message}
         </div>
         <button className="mt-3 rounded-xl border border-line px-3 py-1.5 font-semibold hover:bg-elevated" onClick={() => this.setState({ error: null })}>
-          Try again
+          נסה שוב · Try again
         </button>
       </div>
     );

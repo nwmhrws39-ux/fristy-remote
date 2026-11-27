@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   inputEnabled: false,
   screenEnabled: false,
   port: DEFAULT_CONTROL_PORT,
-  language: 'en',
+  language: 'he',
   theme: 'dark',
   accent: 'purple',
   startWithWindows: false,

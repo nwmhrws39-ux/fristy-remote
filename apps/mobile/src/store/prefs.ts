@@ -28,7 +28,7 @@ export interface Prefs {
 }
 
 export const DEFAULT_PREFS: Prefs = {
-  language: 'en',
+  language: 'he',
   theme: 'dark',
   accent: 'purple',
   sensitivity: 1.4,
@@ -53,7 +53,7 @@ const KEY = 'fristy.prefs.v1';
 export async function loadPrefs(): Promise<Prefs> {
   const p = await readJson<Partial<Prefs> | null>(KEY, null);
   // First run: follow the phone's language.
-  const language: Language = getLocales()[0]?.languageCode === 'he' ? 'he' : 'en';
+  const language: Language = getLocales()[0]?.languageCode === 'en' && getLocales()[0]?.regionCode !== 'IL' ? 'en' : 'he';
   const base = { ...DEFAULT_PREFS, language };
   if (!p) return base;
   return { ...base, ...p, notifications: { ...DEFAULT_PREFS.notifications, ...(p.notifications ?? {}) } };

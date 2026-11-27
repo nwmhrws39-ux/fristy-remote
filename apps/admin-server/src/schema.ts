@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS invites (code TEXT PRIMARY KEY, note TEXT NOT NULL DE
 CREATE TABLE IF NOT EXISTS admin_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '');
 -- which install made rate-limited attempts (so the owner can see and lift a limit)
 CREATE TABLE IF NOT EXISTS attempt_installs (key TEXT NOT NULL, install_id TEXT NOT NULL, PRIMARY KEY (key, install_id));
+-- abuse / security reports from users (no IP addresses; contact is optional and self-provided)
+CREATE TABLE IF NOT EXISTS abuse_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, install_id TEXT, category TEXT NOT NULL, message TEXT NOT NULL, contact TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open', resolved_at INTEGER);
 `;
 
 /** Schema statements without comments (every statement is idempotent). */

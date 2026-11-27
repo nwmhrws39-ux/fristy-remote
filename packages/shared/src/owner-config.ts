@@ -6,4 +6,4 @@
 export const DEFAULT_ADMIN_API_URL = 'https://fristy-admin.nwmhrws39.workers.dev';
 
 /** Owner-service version this app needs for every admin-panel feature (see apps/admin-server SERVER_VERSION). */
-export const REQUIRED_SERVER_VERSION = 5;
+export const REQUIRED_SERVER_VERSION = 6;

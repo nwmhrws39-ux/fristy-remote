@@ -40,7 +40,7 @@ export interface Deps {
 }
 
 /** bump when the API changes, so the owner can check what is deployed */
-export const SERVER_VERSION = 5;
+export const SERVER_VERSION = 6;
 
 const ONLINE_MS = 20 * 60_000;
 const DAY_MS = 86_400_000;
@@ -101,6 +101,27 @@ const InstallUpdateSchema = z
     message: z.string().max(300).optional()
   })
   .strict();
+
+const MeSchema = z.object({ installId: InstallId }).strict();
+export const REPORT_CATEGORIES = ['unauthorized-access', 'unauthorized-tracking', 'account-compromise', 'vulnerability', 'other'] as const;
+const ReportSchema = z
+  .object({
+    installId: InstallId.optional(),
+    category: z.enum(REPORT_CATEGORIES),
+    message: z.string().trim().min(5).max(1000),
+    contact: z.string().trim().max(200).optional()
+  })
+  .strict();
+
+/** How long the owner service keeps each kind of data (see legal/DATA_RETENTION_POLICY.md). */
+export const RETENTION = {
+  dailyActivityDays: 180,
+  inactiveInstallDays: 365,
+  attemptsDays: 2,
+  adminLogDays: 365,
+  resolvedReportDays: 365,
+  adminTokenDays: 180
+} as const;
 
 const InviteCreateSchema = z.object({ maxUses: z.number().int().min(1).max(1000), note: z.string().max(60).optional() }).strict();
 const InviteDeleteSchema = z.object({ code: InviteCode }).strict();
@@ -231,6 +252,54 @@ async function installName(db: Db, id: string): Promise<string> {
 
 async function ensureExtra(db: Db, id: string) {
   await db.run('INSERT INTO install_extra (install_id) VALUES (?) ON CONFLICT(install_id) DO NOTHING', id);
+}
+
+/* ---------------- user data rights ---------------- */
+
+/** Everything the owner service holds about one install (data access / portability). */
+async function exportInstall(db: Db, id: string) {
+  const install = await db.first<Record<string, unknown>>('SELECT id, name, kind, platform, app_version, country, first_seen, last_seen, blocked, admin FROM installs WHERE id = ?', id);
+  const extra = await db.first<Record<string, unknown>>('SELECT invited, beta, message, message_at FROM install_extra WHERE install_id = ?', id);
+  const activity = await db.all<{ day: string; kind: string; app_version: string }>('SELECT day, kind, app_version FROM daily_activity WHERE install_id = ? ORDER BY day', id);
+  const reports = await db.all<Record<string, unknown>>('SELECT ts, category, message, contact, status FROM abuse_reports WHERE install_id = ?', id);
+  const attempts = await db.all<{ key: string }>('SELECT key FROM attempt_installs WHERE install_id = ?', id);
+  return {
+    exportedAt: new Date().toISOString(),
+    note: 'This is all data the FRISTY Remote owner service stores about this app installation. IP addresses are never stored; failed-code limits use a one-way hash of the network address for up to 2 days.',
+    install,
+    extra,
+    dailyActivity: activity,
+    reports,
+    rateLimitEntries: attempts.length
+  };
+}
+
+/** Erases an install and everything linked to it. */
+async function deleteInstall(db: Db, id: string) {
+  const keys = await db.all<{ key: string }>('SELECT key FROM attempt_installs WHERE install_id = ?', id);
+  for (const k of keys) await db.run('DELETE FROM attempts WHERE key = ?', k.key);
+  await db.run('DELETE FROM attempts WHERE key = ?', `login-install:${id}`);
+  await db.run('DELETE FROM attempt_installs WHERE install_id = ?', id);
+  await db.run('DELETE FROM admin_tokens WHERE install_id = ?', id);
+  await db.run('DELETE FROM daily_activity WHERE install_id = ?', id);
+  await db.run('DELETE FROM install_extra WHERE install_id = ?', id);
+  await db.run('UPDATE abuse_reports SET install_id = NULL WHERE install_id = ?', id);
+  await db.run('DELETE FROM installs WHERE id = ?', id);
+}
+
+/** Retention schedule, run daily (Cron Trigger) – see legal/DATA_RETENTION_POLICY.md. */
+export async function purgeExpired(deps: Pick<Deps, 'db' | 'now'>): Promise<{ installs: number }> {
+  const now = deps.now();
+  const days = (n: number) => now - n * DAY_MS;
+  await deps.db.run('DELETE FROM daily_activity WHERE day < ?', dayKey(days(RETENTION.dailyActivityDays)));
+  await deps.db.run('DELETE FROM attempts WHERE window_start < ?', days(RETENTION.attemptsDays));
+  await deps.db.run('DELETE FROM attempt_installs WHERE key NOT IN (SELECT key FROM attempts)');
+  await deps.db.run('DELETE FROM admin_log WHERE ts < ?', days(RETENTION.adminLogDays));
+  await deps.db.run("DELETE FROM abuse_reports WHERE status = 'resolved' AND resolved_at < ?", days(RETENTION.resolvedReportDays));
+  await deps.db.run('DELETE FROM admin_tokens WHERE created_at < ?', days(RETENTION.adminTokenDays));
+  const stale = await deps.db.all<{ id: string }>('SELECT id FROM installs WHERE last_seen < ? AND admin = 0', days(RETENTION.inactiveInstallDays));
+  for (const s of stale) await deleteInstall(deps.db, s.id);
+  return { installs: stale.length };
 }
 
 /* ---------------- attempt limits ---------------- */
@@ -438,6 +507,40 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       });
     }
 
+    case 'POST /v1/me/export': {
+      const p = MeSchema.safeParse(body);
+      if (!p.success) return fail(400, 'invalid request');
+      if (!(await allowAttempt(deps, `me:${deps.clientKey}`, 20, LOGIN_WINDOW_MS))) return fail(429, 'too many requests, try again later');
+      return json(await exportInstall(deps.db, p.data.installId));
+    }
+
+    case 'POST /v1/me/delete': {
+      const p = MeSchema.safeParse(body);
+      if (!p.success) return fail(400, 'invalid request');
+      if (!(await allowAttempt(deps, `me:${deps.clientKey}`, 20, LOGIN_WINDOW_MS))) return fail(429, 'too many requests, try again later');
+      const inst = await deps.db.first<{ admin: number }>('SELECT admin FROM installs WHERE id = ?', p.data.installId);
+      await deleteInstall(deps.db, p.data.installId);
+      if (inst) await audit(deps, 'user', 'data.deleted', '', inst.admin ? 'admin install' : '');
+      return json({ ok: true, deleted: !!inst });
+    }
+
+    case 'POST /v1/report': {
+      const p = ReportSchema.safeParse(body);
+      if (!p.success) return fail(400, 'please choose a category and describe the problem (5–1000 characters)');
+      if (!(await allowAttempt(deps, `report:${deps.clientKey}`, 5, LOGIN_WINDOW_MS))) return fail(429, 'too many reports, try again later');
+      await deps.db.run(
+        'INSERT INTO abuse_reports (ts, install_id, category, message, contact) VALUES (?, ?, ?, ?, ?)',
+        deps.now(),
+        p.data.installId ?? null,
+        p.data.category,
+        p.data.message,
+        p.data.contact ?? ''
+      );
+      const cfg = await getConfig(deps.db);
+      if (cfg.notifyTopic && deps.notify) deps.notify(cfg.notifyTopic, 'FRISTY Remote', `New report: ${p.data.category}`);
+      return json({ ok: true });
+    }
+
     case 'POST /v1/admin/login': {
       if (!deps.adminCode) return fail(503, 'admin code not configured');
       const p = LoginSchema.safeParse(body);
@@ -544,6 +647,21 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         }
         await audit(deps, adminId, 'limits.reset', p.data.installId ?? '');
         return json({ ok: true, cleared: keys.size });
+      }
+
+      case 'GET /v1/admin/reports': {
+        const rows = await deps.db.all<{ id: number; ts: number; install_id: string | null; category: string; message: string; contact: string; status: string; name: string | null }>(
+          'SELECT r.*, i.name FROM abuse_reports r LEFT JOIN installs i ON i.id = r.install_id ORDER BY r.status = \'open\' DESC, r.id DESC LIMIT 200'
+        );
+        return json({ reports: rows.map((r) => ({ id: r.id, ts: r.ts, installId: r.install_id, name: r.name, category: r.category, message: r.message, contact: r.contact, status: r.status })) });
+      }
+
+      case 'POST /v1/admin/reports/resolve': {
+        const p = z.object({ id: z.number().int().positive() }).strict().safeParse(body);
+        if (!p.success) return fail(400, 'invalid request');
+        await deps.db.run("UPDATE abuse_reports SET status = 'resolved', resolved_at = ? WHERE id = ?", deps.now(), p.data.id);
+        await audit(deps, adminId, 'report.resolved', '', String(p.data.id));
+        return json({ ok: true });
       }
 
       case 'GET /v1/admin/log': {

@@ -297,7 +297,7 @@ describe('new owner features', () => {
 
 it('shows the deployed version at the root address', async () => {
   const r = await call('GET', '/');
-  expect(r.body).toMatchObject({ ok: true, version: 5 });
+  expect(r.body).toMatchObject({ ok: true, version: 6 });
 });
 
 it('pings running apps when the owner changes something', async () => {
@@ -352,4 +352,53 @@ it('tells a blocked device how long to wait', async () => {
   expect(r.status).toBe(429);
   expect(r.body).toMatchObject({ retryAfterMinutes: 50 });
   expect(String(r.body.error)).toMatch(/50 min.*owner/);
+});
+
+describe('user data rights, reports and retention', () => {
+  it('a user can export and then delete everything stored about their install', async () => {
+    const token = await becomeAdmin();
+    await checkin(FRIEND, 'Dani');
+    await call('POST', '/v1/admin/install', { installId: FRIEND, message: 'hello' }, token);
+    await call('POST', '/v1/report', { installId: FRIEND, category: 'other', message: 'test report' });
+    const ex = await call('POST', '/v1/me/export', { installId: FRIEND });
+    expect(ex.status).toBe(200);
+    expect(ex.body).toMatchObject({ install: { name: 'Dani', country: 'IL' }, extra: { message: 'hello' } });
+    expect((ex.body.dailyActivity as unknown[]).length).toBe(1);
+    expect(JSON.stringify(ex.body)).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+
+    const del = await call('POST', '/v1/me/delete', { installId: FRIEND });
+    expect(del.body).toMatchObject({ ok: true, deleted: true });
+    const after = await call('POST', '/v1/me/export', { installId: FRIEND });
+    expect(after.body).toMatchObject({ install: null, extra: null, dailyActivity: [], reports: [] });
+    // the report stays for the owner, but is no longer linked to the deleted install
+    const reports = (await call('GET', '/v1/admin/reports', undefined, token)).body.reports as { installId: string | null }[];
+    expect(reports[0]?.installId).toBeNull();
+  });
+
+  it('abuse reports are validated, rate limited and can be resolved by the owner', async () => {
+    const token = await becomeAdmin();
+    expect((await call('POST', '/v1/report', { category: 'spam', message: 'hello there' })).status).toBe(400);
+    expect((await call('POST', '/v1/report', { category: 'unauthorized-tracking', message: 'hi' })).status).toBe(400);
+    for (let i = 0; i < 5; i++) expect((await call('POST', '/v1/report', { category: 'unauthorized-access', message: `someone is using my PC ${i}` })).status).toBe(200);
+    expect((await call('POST', '/v1/report', { category: 'unauthorized-access', message: 'one more report' })).status).toBe(429);
+    const list = (await call('GET', '/v1/admin/reports', undefined, token)).body.reports as { id: number; status: string }[];
+    expect(list).toHaveLength(5);
+    await call('POST', '/v1/admin/reports/resolve', { id: list[0]!.id }, token);
+    const again = (await call('GET', '/v1/admin/reports', undefined, token)).body.reports as { id: number; status: string }[];
+    expect(again.find((r) => r.id === list[0]!.id)?.status).toBe('resolved');
+    expect((await call('GET', '/v1/admin/reports')).status).toBe(401);
+  });
+
+  it('the daily purge applies the retention schedule', async () => {
+    const { purgeExpired, RETENTION } = await import('../src/api');
+    await becomeAdmin();
+    await checkin(FRIEND);
+    const DAY = 86_400_000;
+    now += (RETENTION.inactiveInstallDays + 1) * DAY;
+    const r = await purgeExpired(deps);
+    expect(r.installs).toBe(1); // the inactive friend – never the admin
+    const owner = await deps.db.first<{ id: string }>('SELECT id FROM installs WHERE id = ?', OWNER);
+    expect(owner?.id).toBe(OWNER);
+    expect(await deps.db.all('SELECT * FROM daily_activity')).toEqual([]);
+  });
 });

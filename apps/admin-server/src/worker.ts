@@ -1,4 +1,4 @@
-import { handle, sha256Hex, type Db } from './api';
+import { handle, purgeExpired, sha256Hex, type Db } from './api';
 import { SCHEMA_SQL, schemaStatements } from './schema';
 
 export { LiveHub } from './hub';
@@ -30,6 +30,12 @@ async function ensureSchema(db: D1Database) {
 }
 
 export default {
+  /** Daily Cron Trigger: deletes data past its retention period. */
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    await ensureSchema(env.DB);
+    await purgeExpired({ db: d1(env.DB), now: () => Date.now() });
+  },
+
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // The caller's IP is only used, hashed, as a rate-limit key – it is never stored or shown.
     const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';

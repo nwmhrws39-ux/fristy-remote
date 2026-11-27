@@ -17,3 +17,7 @@ class_name = "LiveHub"
 [[migrations]]
 tag = "live-hub-v1"
 new_sqlite_classes = ["LiveHub"]
+
+# Daily retention purge (see legal/DATA_RETENTION_POLICY.md)
+[triggers]
+crons = ["17 3 * * *"]

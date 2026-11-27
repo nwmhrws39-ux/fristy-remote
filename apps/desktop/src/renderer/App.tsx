@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  LockKeyhole,
   AppWindow,
   Crown,
   FolderSync,
@@ -26,6 +27,9 @@ import { Files } from './pages/Files';
 import { Logs } from './pages/Logs';
 import { Settings } from './pages/Settings';
 import { Admin } from './pages/Admin';
+import { Privacy } from './pages/Privacy';
+import { LegalGate } from './components/LegalGate';
+import { isAccepted } from '@fristy/shared/src/legal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const PAGES = [
@@ -36,6 +40,7 @@ const PAGES = [
   { id: 'macros', icon: Zap, label: 'nav.macros' },
   { id: 'files', icon: FolderSync, label: 'nav.files' },
   { id: 'logs', icon: ShieldCheck, label: 'nav.logs' },
+  { id: 'privacy', icon: LockKeyhole, label: 'nav.privacy' },
   { id: 'settings', icon: SettingsIcon, label: 'nav.settings' },
   { id: 'admin', icon: Crown, label: 'owner.panel' }
 ] as const;
@@ -124,6 +129,19 @@ function Shell({ state }: { state: CoreState }) {
             </div>
           )}
         </div>
+        <div className="mb-3 flex justify-center gap-3 text-[11px] text-faint">
+          <button className="hover:text-fg" onClick={() => void invoke('legal.open', { page: 'privacy' })}>
+            {t('privacy.footerPrivacy')}
+          </button>
+          ·
+          <button className="hover:text-fg" onClick={() => void invoke('legal.open', { page: 'terms' })}>
+            {t('privacy.footerTerms')}
+          </button>
+          ·
+          <button className="hover:text-fg" onClick={() => setPage('privacy')}>
+            {t('privacy.footerReport')}
+          </button>
+        </div>
       </aside>
       <main className="flex-1 overflow-y-auto">
         <div className="drag h-10" />
@@ -142,10 +160,12 @@ function Shell({ state }: { state: CoreState }) {
           {page === 'logs' && <Logs />}
           {page === 'settings' && <Settings state={state} />}
           {page === 'admin' && <Admin state={state} />}
+          {page === 'privacy' && <Privacy state={state} />}
           </ErrorBoundary>
         </div>
       </main>
       <PairingRequestDialog request={request} onDone={() => setRequest(null)} />
+      {state.legal.required && !isAccepted(state.legal.accepted) && <LegalGate state={state} />}
     </div>
   );
 }

@@ -246,6 +246,7 @@ app.whenReady().then(async () => {
     desktop: desktopBridge,
     // 'off' (used by CI test builds) disables the owner service entirely
     ownerApiUrl: process.env.FRISTY_ADMIN_API_URL === 'off' ? '' : process.env.FRISTY_ADMIN_API_URL || DEFAULT_ADMIN_API_URL,
+    requireLegalAcceptance: true,
     ownerTokenStore: {
       get: () => secrets.get('owner-token'),
       set: (t) => {

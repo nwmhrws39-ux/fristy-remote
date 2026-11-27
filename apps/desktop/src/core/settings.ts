@@ -23,7 +23,9 @@ export const SettingsSchema = z.object({
   alertLowStoragePct: z.number().int().min(1).max(50),
   /** FRISTY Launcher local API (optional integration) */
   launcherIntegration: z.boolean(),
-  launcherApiUrl: z.string().max(256)
+  launcherApiUrl: z.string().max(256),
+  /** privacy: days to keep the security log and transfer history */
+  historyRetentionDays: z.number().int().min(1).max(3650)
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 
@@ -44,7 +46,8 @@ export const DEFAULT_SETTINGS: Settings = {
   alertGpuTemp: 85,
   alertLowStoragePct: 10,
   launcherIntegration: false,
-  launcherApiUrl: 'http://127.0.0.1:47820'
+  launcherApiUrl: 'http://127.0.0.1:47820',
+  historyRetentionDays: 90
 };
 
 export class SettingsManager {

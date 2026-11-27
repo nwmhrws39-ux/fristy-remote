@@ -468,6 +468,34 @@ export class Store {
     this.run('DELETE FROM macros WHERE id = ?', [id]);
   }
 
+  /* ---------------- privacy ---------------- */
+
+  /** Deletes security/connection logs and transfer history (Privacy Center → Delete history). */
+  deleteHistory(): void {
+    this.run('DELETE FROM logs', []);
+    this.run('DELETE FROM transfers', []);
+  }
+
+  /** Retention: removes log and transfer entries older than `days`. */
+  purgeHistoryOlderThan(days: number): void {
+    const cutoff = Date.now() - days * 86_400_000;
+    this.run('DELETE FROM logs WHERE ts < ?', [cutoff]);
+    this.run('DELETE FROM transfers WHERE started_at < ?', [cutoff]);
+  }
+
+  /** Everything this PC stores, for the user's own export (keys and secrets excluded). */
+  exportAll(): Record<string, unknown> {
+    return {
+      devices: this.listDevices(true).map(({ publicKey: _k, ...d }) => d),
+      logs: this.listLogs(5000),
+      transfers: this.listTransfers(undefined, 5000),
+      sharedFolders: this.listSharedFolders(),
+      apps: this.listApps().map(({ icon: _i, ...a }) => a),
+      websites: this.listUrls(),
+      macros: this.listMacros()
+    };
+  }
+
   /* ---------------- transfers ---------------- */
 
   upsertTransfer(t: TransferRow): void {

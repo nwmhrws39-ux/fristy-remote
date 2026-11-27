@@ -68,6 +68,29 @@ try {
     (await win.evaluate(() => window.fristy.invoke('pairing.create'))).qrText.match(/"pk":"([^"]+)"/)[1]
   );
 
+  // 0) Legal onboarding: phones are refused until the PC owner accepts the terms;
+  //    nothing is pre-selected and "continue" stays disabled until the box is ticked.
+  await win.waitForSelector('text=Before you start');
+  const preChecked = await win.locator('[role=dialog] input[type=checkbox]').evaluateAll((els) => els.map((e) => e.checked));
+  assert.ok(preChecked.length >= 4 && preChecked.every((c) => c === false), 'no consent box may be pre-selected');
+  assert.equal(await win.getByRole('button', { name: 'Accept and continue' }).isDisabled(), true);
+  const pre = await win.evaluate(() => window.fristy.invoke('pairing.create'));
+  const preQr = decodePairingQr(pre.qrText);
+  await assert.rejects(
+    new RemoteClient({ url, socketFactory, identity: generateKeyPair(), serverPublicKey: decodeBase64(preQr.pk), open: { pairingId: preQr.pid, secret: preQr.secret, deviceName: 'Early', platform: 'android' } }).connect(),
+    (e) => e.code === 'remote_disabled' && /accept the terms/.test(e.message)
+  );
+  await assert.rejects(win.evaluate(() => window.fristy.invoke('legal.accept', { adult: false, accepted: true })), /18 or older/);
+  await win.locator('[role=dialog] label').first().click();
+  await win.getByRole('button', { name: 'Accept and continue' }).click();
+  await win.waitForSelector('text=Before you start', { state: 'detached' });
+  const legal = (await win.evaluate(() => window.fristy.invoke('state.get'))).legal;
+  assert.equal(legal.accepted.version, legal.current);
+  assert.ok(Date.now() - legal.accepted.acceptedAt < 60_000);
+  const after = (await win.evaluate(() => window.fristy.invoke('state.get'))).settings;
+  assert.deepEqual([after.relayEnabled, after.screenEnabled, after.inputEnabled], [false, false, false], 'optional features stay off unless chosen');
+  step(`legal onboarding: phones refused before acceptance, no pre-selected boxes, version ${legal.current} recorded with timestamp`);
+
   // 1) An unpaired phone is refused.
   await assert.rejects(
     new RemoteClient({ url, socketFactory, identity: generateKeyPair(), serverPublicKey, open: { deviceName: 'Intruder' } }).connect(),
@@ -152,6 +175,41 @@ try {
     await win.waitForTimeout(500);
     await win.screenshot({ path: path.join(shots, 'e2e-logs.png') });
   }
+
+  // 5) Privacy center: export, delete history, emergency revoke, withdraw & reset.
+  const exported = await win.evaluate(() => window.fristy.invoke('state.get'));
+  assert.ok(exported.legal.accepted);
+  await win.getByRole('button', { name: 'Privacy & Security' }).click();
+  await win.waitForSelector('text=Who can access this PC');
+  if (shots) await win.screenshot({ path: path.join(shots, 'e2e-privacy.png'), fullPage: true });
+  await win.evaluate(() => window.fristy.invoke('privacy.deleteHistory'));
+  const afterDelete = await win.evaluate(() => window.fristy.invoke('logs.list', {}));
+  assert.ok(afterDelete.length <= 1 && afterDelete.every((l) => /History deleted/.test(l.message)), 'history must be empty after deletion');
+  step('privacy: history deleted (security log + transfers)');
+
+  // pair a second phone, then emergency-revoke everything
+  const p2 = decodePairingQr((await win.evaluate(() => window.fristy.invoke('pairing.create'))).qrText);
+  const phone2 = generateKeyPair();
+  const c2 = new RemoteClient({ url, socketFactory, identity: phone2, serverPublicKey: decodeBase64(p2.pk), open: { pairingId: p2.pid, secret: p2.secret, deviceName: 'Second Phone', platform: 'ios' } });
+  const c2conn = c2.connect();
+  await win.waitForSelector('text=Pairing request');
+  await win.getByRole('button', { name: 'Approve' }).click();
+  await c2conn;
+  const revoked = await win.evaluate(() => window.fristy.invoke('privacy.revokeAll'));
+  assert.equal(revoked, 1);
+  await assert.rejects(
+    new RemoteClient({ url, socketFactory, identity: phone2, serverPublicKey: decodeBase64(p2.pk), open: { deviceName: 'Second Phone' } }).connect(),
+    (e) => e.code === 'revoked'
+  );
+  step('privacy: emergency revoke disconnected and removed every paired device');
+
+  await win.evaluate(() => window.fristy.invoke('privacy.withdraw'));
+  await win.waitForSelector('text=Before you start');
+  const withdrawn = await win.evaluate(() => window.fristy.invoke('state.get'));
+  assert.equal(withdrawn.legal.accepted, null);
+  step('privacy: withdrawing acceptance shows the terms again and blocks phones');
+
+
   client.close();
   console.log('\nE2E smoke test passed');
 } finally {

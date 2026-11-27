@@ -402,3 +402,9 @@ describe('user data rights, reports and retention', () => {
     expect(await deps.db.all('SELECT * FROM daily_activity')).toEqual([]);
   });
 });
+
+it('report categories match the apps', async () => {
+  const shared = await import('@fristy/shared');
+  const { REPORT_CATEGORIES } = await import('../src/api');
+  expect([...REPORT_CATEGORIES]).toEqual([...shared.REPORT_CATEGORIES]);
+});

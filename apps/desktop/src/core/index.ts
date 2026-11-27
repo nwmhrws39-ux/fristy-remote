@@ -19,6 +19,7 @@ import { MacroService } from './services/macros';
 import { ProcessCache } from './services/processes';
 import { SettingsManager, type Settings } from './settings';
 import { OwnerClient, type OwnerStatus } from './owner';
+import { LEGAL_CONTRACT_DOCS, LEGAL_VERSION, isAccepted, type LegalAcceptance } from '@fristy/shared';
 
 export interface CoreOptions {
   /** directory for the database; null = in-memory (tests) */
@@ -42,6 +43,8 @@ export interface CoreOptions {
   ownerTokenStore?: { get(): string | null; set(token: string | null): void };
   /** live owner updates over WebSocket (default on) */
   ownerLive?: boolean;
+  /** refuse phones until the PC owner has accepted the current legal terms (the app sets this; tests may not) */
+  requireLegalAcceptance?: boolean;
 }
 
 export interface PairingView {
@@ -66,6 +69,7 @@ export interface CoreState {
   pairing: PairingView | null;
   relay: { status: RelayStatus; error: string | null };
   owner: OwnerStatus;
+  legal: { required: boolean; accepted: LegalAcceptance | null; current: string };
 }
 
 type CoreEvents = {
@@ -94,6 +98,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   private lastAlert = new Map<string, number>();
   private listenError: string | null = null;
   private port = 0;
+  private retentionTimer: NodeJS.Timeout | null = null;
   private stateTimer: NodeJS.Timeout | null = null;
   private started = false;
 
@@ -215,6 +220,10 @@ export class FristyCore extends EventEmitter<CoreEvents> {
     }
     this.games.startTracking();
     this.owner.start();
+    // privacy: apply the history retention period now and once a day
+    this.applyRetention();
+    this.retentionTimer = setInterval(() => this.applyRetention(), 24 * 60 * 60_000);
+    this.retentionTimer.unref();
     await this.applySettings(this.settings.get(), ['remoteEnabled', 'relayEnabled']);
     this.statsTimer = setInterval(() => void this.statsTick(), STATS_INTERVAL_MS);
     this.statsTimer.unref();
@@ -228,6 +237,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
     this.discovery?.stop();
     this.relay.stop();
     this.owner.stop();
+    if (this.retentionTimer) clearInterval(this.retentionTimer);
     this.files.dispose();
     await this.server.dispose();
     this.store.close();
@@ -316,6 +326,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   /** Blocks phone connections until the app is updated (mandatory updates). */
   /** Why phones are refused right now (owner lock or mandatory update), or null. */
   private ownerLockMessage(): string | null {
+    if (this.opts.requireLegalAcceptance && !isAccepted(this.legalAcceptance()))
+      return 'FRISTY Remote on this PC is waiting for its owner to accept the terms. Open FRISTY Remote on the PC.';
     if (this.updateRequired) return this.updateRequired;
     const o = this.owner.status;
     if (o.admin) return null;
@@ -335,6 +347,73 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       this.server.disconnectAll(message);
       this.store.log('info', 'update', message);
     }
+    this.emitState();
+  }
+
+  /* ---------------- legal & privacy ---------------- */
+
+  legalAcceptance(): LegalAcceptance | null {
+    return this.store.getSetting<LegalAcceptance | null>('legalAcceptance', null);
+  }
+
+  /** Records acceptance of the current legal documents (version + timestamp). Optional features are separate choices. */
+  acceptLegal(opts: { adult: boolean; accepted: boolean; optional?: { relay?: boolean; screen?: boolean; input?: boolean } }): LegalAcceptance {
+    if (!opts.adult || !opts.accepted) throw new Error('The terms must be accepted and you must confirm that you are 18 or older');
+    const a: LegalAcceptance = { version: LEGAL_VERSION, acceptedAt: Date.now(), adult: true, documents: [...LEGAL_CONTRACT_DOCS] };
+    this.store.setSetting('legalAcceptance', a);
+    const history = this.store.getSetting<LegalAcceptance[]>('legalAcceptanceHistory', []);
+    this.store.setSetting('legalAcceptanceHistory', [...history, a].slice(-20));
+    const o = opts.optional ?? {};
+    const patch: Partial<Settings> = {};
+    if (o.relay !== undefined) patch.relayEnabled = o.relay;
+    if (o.screen !== undefined) patch.screenEnabled = o.screen;
+    if (o.input !== undefined) patch.inputEnabled = o.input;
+    if (Object.keys(patch).length) this.settings.update(patch);
+    this.store.log('security', 'privacy', `Legal terms ${LEGAL_VERSION} accepted`);
+    this.emitState();
+    return a;
+  }
+
+  /** Revokes every paired device and disconnects all sessions (Privacy Center → Emergency revoke). */
+  revokeAllDevices(): number {
+    const devices = this.store.listDevices();
+    for (const d of devices) this.store.revokeDevice(d.id);
+    this.server.disconnectAll('access revoked by the PC owner');
+    this.settings.update({ inputEnabled: false, screenEnabled: false });
+    this.store.log('security', 'privacy', `Emergency revoke: ${devices.length} device(s) removed`);
+    this.emitState();
+    return devices.length;
+  }
+
+  deleteHistory() {
+    this.store.deleteHistory();
+    this.store.log('info', 'privacy', 'History deleted by the PC owner');
+    this.emitState();
+  }
+
+  applyRetention() {
+    this.store.purgeHistoryOlderThan(this.settings.get().historyRetentionDays);
+  }
+
+  /** Everything stored on this PC (keys and secrets excluded). */
+  exportLocalData() {
+    return {
+      exportedAt: new Date().toISOString(),
+      app: 'FRISTY Remote (PC)',
+      appVersion: this.opts.appVersion,
+      legal: { current: this.legalAcceptance(), history: this.store.getSetting('legalAcceptanceHistory', []) },
+      settings: this.settings.get(),
+      ownerService: { installId: this.owner.installId, status: this.owner.status },
+      ...this.store.exportAll()
+    };
+  }
+
+  /** Withdraw acceptance and reset: revoke all devices, delete history and the acceptance record. */
+  withdrawAndReset() {
+    this.revokeAllDevices();
+    this.store.deleteHistory();
+    this.store.setSetting('legalAcceptance', null);
+    this.store.log('security', 'privacy', 'Legal acceptance withdrawn; devices revoked and history deleted');
     this.emitState();
   }
 
@@ -400,7 +479,8 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       pending: this.server.pendingPairings(),
       pairing: this.pairingView(),
       relay: { status: this.relay.status, error: this.relay.lastError },
-      owner: this.owner.status
+      owner: this.owner.status,
+      legal: { required: !!this.opts.requireLegalAcceptance, accepted: this.legalAcceptance(), current: LEGAL_VERSION }
     };
   }
 

@@ -98,6 +98,28 @@ export const IPC = {
   'owner.inviteDelete': z.object({ code: z.string().min(4).max(16) }).strict(),
   'owner.notifyTest': none,
   'owner.limits': none,
+  'legal.accept': z
+    .object({
+      adult: z.boolean(),
+      accepted: z.boolean(),
+      optional: z.object({ relay: z.boolean().optional(), screen: z.boolean().optional(), input: z.boolean().optional() }).strict().optional()
+    })
+    .strict(),
+  'legal.decline': none,
+  'legal.open': z.object({ page: z.string().regex(/^[a-z-]{3,32}$/) }).strict(),
+  'privacy.export': none,
+  'privacy.deleteHistory': none,
+  'privacy.revokeAll': none,
+  'privacy.withdraw': none,
+  'privacy.remoteExport': none,
+  'privacy.remoteDelete': none,
+  'privacy.report': z
+    .object({
+      category: z.enum(['unauthorized-access', 'unauthorized-tracking', 'account-compromise', 'vulnerability', 'other']),
+      message: z.string().trim().min(5).max(1000),
+      contact: z.string().trim().max(200).optional()
+    })
+    .strict(),
   'owner.serverVersion': none,
   'owner.limitReset': z.object({ installId: z.string().min(1).max(80).optional(), id: z.string().max(32).optional() }).strict(),
   'owner.redeem': z.object({ code: z.string().min(1).max(32) }).strict(),

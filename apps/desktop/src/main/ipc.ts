@@ -1,7 +1,8 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import QRCode from 'qrcode';
-import { randomId } from '@fristy/shared';
+import { LEGAL_DOCS, legalUrl, randomId } from '@fristy/shared';
 import type { FristyCore } from '../core';
 import type { SecretStore } from '../core/identity';
 import { FristyLauncherClient } from '../core/integrations/fristy-launcher';
@@ -10,6 +11,15 @@ import { runDiagnostics } from './diagnostics';
 import type { Updater } from './updater';
 
 type Handler = (payload: never, win: BrowserWindow | null) => unknown;
+
+/** Lets the user choose where to save an export; returns the path or null if cancelled. */
+async function saveJson(win: BrowserWindow | null, name: string, data: unknown): Promise<string | null> {
+  const opts = { title: 'Save export', defaultPath: path.join(app.getPath('documents'), name), filters: [{ name: 'JSON', extensions: ['json'] }] };
+  const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+  if (r.canceled || !r.filePath) return null;
+  await fs.promises.writeFile(r.filePath, JSON.stringify(data, null, 2), 'utf8');
+  return r.filePath;
+}
 
 export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl: (url: string) => boolean, updater: Updater) {
   const handlers: Record<IpcChannel, Handler> = {
@@ -119,6 +129,27 @@ export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl
     'owner.inviteDelete': (p: { code: string }) => core.owner.deleteInvite(p.code),
     'owner.notifyTest': () => core.owner.notifyTest(),
     'owner.limits': () => core.owner.limits(),
+    'legal.accept': (p: { adult: boolean; accepted: boolean; optional?: { relay?: boolean; screen?: boolean; input?: boolean } }) => core.acceptLegal(p),
+    'legal.decline': () => {
+      core.store.log('info', 'privacy', 'Legal terms declined – quitting');
+      setTimeout(() => app.quit(), 50);
+    },
+    'legal.open': (p: { page: string }) => {
+      const pages = [...LEGAL_DOCS.map((d) => d.id as string), 'delete-account', 'report-abuse', 'contact'];
+      if (!pages.includes(p.page)) throw new Error('unknown page');
+      return shell.openExternal(legalUrl(p.page as never, core.settings.get().language));
+    },
+    'privacy.export': async (_p: never, win: BrowserWindow | null) => saveJson(win, 'fristy-remote-pc-data.json', core.exportLocalData()),
+    'privacy.deleteHistory': () => core.deleteHistory(),
+    'privacy.revokeAll': () => core.revokeAllDevices(),
+    'privacy.withdraw': () => core.withdrawAndReset(),
+    'privacy.remoteExport': async (_p: never, win: BrowserWindow | null) => saveJson(win, 'fristy-remote-server-data.json', await core.owner.exportMyData()),
+    'privacy.remoteDelete': async () => {
+      const r = await core.owner.deleteMyData();
+      core.store.log('security', 'privacy', 'Owner-service data for this PC deleted');
+      return r;
+    },
+    'privacy.report': (p: { category: string; message: string; contact?: string }) => core.owner.report(p.category, p.message, p.contact),
     'owner.serverVersion': () => core.owner.serverVersion(),
     'owner.limitReset': (p: { installId?: string; id?: string }) => core.owner.resetLimit(p),
     'owner.redeem': (p: { code: string }) => core.owner.redeemInvite(p.code),

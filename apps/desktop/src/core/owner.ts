@@ -375,6 +375,38 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
     return this.admin<{ ok: true }>('POST', '/v1/admin/invite/delete', { code });
   }
 
+  private async publicPost<T>(p: string, body: unknown): Promise<T> {
+    if (!this.enabled) throw new Error('The owner service is not configured in this build');
+    const res = await this.fetchImpl(this.url(p), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000)
+    });
+    const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+    if (!res.ok) throw new Error(json.error ?? `error ${res.status}`);
+    return json;
+  }
+
+  /** Everything the owner service stores about this PC (data access / portability). */
+  exportMyData() {
+    return this.publicPost<Record<string, unknown>>('/v1/me/export', { installId: this.installId });
+  }
+
+  /** Erases this PC's record on the owner service. A later check-in creates a new record. */
+  async deleteMyData(): Promise<{ deleted: boolean }> {
+    const r = await this.publicPost<{ deleted: boolean }>('/v1/me/delete', { installId: this.installId });
+    // a fresh install id, so the deleted record is not recreated under the same id
+    this.opts.store.setSetting('installId', null);
+    this.setToken(null);
+    return r;
+  }
+
+  /** Abuse / security report to the operator. */
+  report(category: string, message: string, contact?: string) {
+    return this.publicPost<{ ok: true }>('/v1/report', { installId: this.installId, category, message, ...(contact ? { contact } : {}) });
+  }
+
   /** Version of the deployed owner service (0 = older than version reporting). */
   async serverVersion(): Promise<number> {
     if (!this.enabled) return 0;

@@ -294,3 +294,8 @@ describe('new owner features', () => {
     ]);
   });
 });
+
+it('shows the deployed version at the root address', async () => {
+  const r = await call('GET', '/');
+  expect(r.body).toMatchObject({ ok: true, version: 3 });
+});

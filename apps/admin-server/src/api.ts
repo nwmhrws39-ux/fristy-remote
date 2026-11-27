@@ -37,6 +37,9 @@ export interface Deps {
   notify?: (topic: string, title: string, message: string) => void;
 }
 
+/** bump when the API changes, so the owner can check what is deployed */
+export const SERVER_VERSION = 3;
+
 const ONLINE_MS = 20 * 60_000;
 const DAY_MS = 86_400_000;
 const LOGIN_MAX_ATTEMPTS = 5;
@@ -305,8 +308,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   }
 
   switch (route) {
+    case 'GET /':
     case 'GET /health':
-      return json({ ok: true });
+      // open the server address in a browser to see which version is deployed
+      return json({ ok: true, service: 'FRISTY Remote owner service', version: SERVER_VERSION });
 
     case 'POST /v1/checkin': {
       const p = CheckinSchema.safeParse(body);

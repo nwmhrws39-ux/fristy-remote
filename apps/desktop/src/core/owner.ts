@@ -375,6 +375,18 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
     return this.admin<{ ok: true }>('POST', '/v1/admin/invite/delete', { code });
   }
 
+  /** Version of the deployed owner service (0 = older than version reporting). */
+  async serverVersion(): Promise<number> {
+    if (!this.enabled) return 0;
+    try {
+      const res = await this.fetchImpl(this.url('/'), { signal: AbortSignal.timeout(10_000) });
+      const b = (await res.json().catch(() => ({}))) as { version?: unknown };
+      return typeof b.version === 'number' ? b.version : 0;
+    } catch {
+      return -1; // unreachable
+    }
+  }
+
   limits() {
     return this.admin<{ limits: { id: string; installId: string | null; name: string | null; kind: 'admin' | 'invite'; attempts: number; resetAt: number }[] }>('GET', '/v1/admin/limits');
   }

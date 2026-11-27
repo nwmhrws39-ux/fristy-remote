@@ -4,3 +4,6 @@
  * with EXPO_PUBLIC_ADMIN_API_URL / FRISTY_ADMIN_API_URL. Empty = admin panel off.
  */
 export const DEFAULT_ADMIN_API_URL = 'https://fristy-admin.nwmhrws39.workers.dev';
+
+/** Owner-service version this app needs for every admin-panel feature (see apps/admin-server SERVER_VERSION). */
+export const REQUIRED_SERVER_VERSION = 5;

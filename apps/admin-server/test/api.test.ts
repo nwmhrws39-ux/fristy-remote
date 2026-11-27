@@ -337,3 +337,19 @@ describe('attempt limits', () => {
     expect((await call('GET', '/v1/admin/limits')).status).toBe(401);
   });
 });
+
+it('the apps expect the server version that is deployed from this repository', async () => {
+  const { REQUIRED_SERVER_VERSION } = await import('@fristy/shared');
+  const { SERVER_VERSION } = await import('../src/api');
+  expect(REQUIRED_SERVER_VERSION).toBe(SERVER_VERSION);
+});
+
+it('tells a blocked device how long to wait', async () => {
+  await checkin(FRIEND);
+  for (let i = 0; i < 5; i++) await call('POST', '/v1/admin/login', { installId: FRIEND, code: `x${i}` });
+  now += 10 * 60_000;
+  const r = await call('POST', '/v1/admin/login', { installId: FRIEND, code: 'y' });
+  expect(r.status).toBe(429);
+  expect(r.body).toMatchObject({ retryAfterMinutes: 50 });
+  expect(String(r.body.error)).toMatch(/50 min.*owner/);
+});

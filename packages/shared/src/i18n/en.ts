@@ -332,6 +332,7 @@ export const en = {
   'owner.unknownDevice': 'Unknown device',
   'owner.limitBadge': 'Too many tries',
   'owner.act.limits.reset': 'removed the attempt limit of',
+  'owner.serverOld': 'The owner server is version {have}, this app needs version {need}. On your PC run:  git pull  →  cd apps/admin-server  →  node setup.mjs --update',
   'owner.stats': 'Statistics',
   'owner.dailyUsers': 'Users per day',
   'owner.newUsers': 'New users',

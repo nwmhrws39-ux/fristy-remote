@@ -366,6 +366,16 @@ export interface AttemptLimit {
   attempts: number;
   resetAt: number;
 }
+/** Version of the deployed owner service (0 = older than version reporting, -1 = unreachable). */
+export async function getServerVersion(): Promise<number> {
+  try {
+    const res = await fetch(API + '/');
+    const b = (await res.json().catch(() => ({}))) as { version?: unknown };
+    return typeof b.version === 'number' ? b.version : 0;
+  } catch {
+    return -1;
+  }
+}
 export const getLimits = () => request<{ limits: AttemptLimit[] }>('GET', '/v1/admin/limits', undefined, true);
 export const resetLimit = (p: { installId?: string; id?: string }) => request<{ ok: true }>('POST', '/v1/admin/limits/reset', p, true);
 export const notifyTest = () => request<{ ok: true }>('POST', '/v1/admin/notify-test', {}, true);

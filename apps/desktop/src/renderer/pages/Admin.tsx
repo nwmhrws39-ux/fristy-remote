@@ -18,6 +18,7 @@ import {
   Wrench
 } from 'lucide-react';
 import type { StringKey } from '@fristy/shared/src/i18n';
+import { REQUIRED_SERVER_VERSION } from '@fristy/shared/src/owner-config';
 import { errorText, invoke, type CoreState } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
@@ -114,6 +115,10 @@ export function Admin({ state }: { state: CoreState }) {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [tab, setTab] = useState<Tab>('stats');
+  const [serverVersion, setServerVersion] = useState<number | null>(null);
+  useEffect(() => {
+    void invoke<number>('owner.serverVersion').then(setServerVersion, () => undefined);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -208,7 +213,13 @@ export function Admin({ state }: { state: CoreState }) {
         ))}
       </nav>
 
-      {data?.outdated && <div className="rounded-2xl border border-warn/40 bg-warn/10 p-4 text-sm text-warn">⚠️ {t('owner.serverOutdated')}</div>}
+      {serverVersion !== null && serverVersion >= 0 && serverVersion < REQUIRED_SERVER_VERSION ? (
+        <div className="rounded-2xl border border-warn/40 bg-warn/10 p-4 text-sm text-warn" dir="auto">
+          ⚠️ {t('owner.serverOld', { have: serverVersion || '≤2', need: REQUIRED_SERVER_VERSION })}
+        </div>
+      ) : (
+        data?.outdated && <div className="rounded-2xl border border-warn/40 bg-warn/10 p-4 text-sm text-warn">⚠️ {t('owner.serverOutdated')}</div>
+      )}
       <ErrorNote>{error}</ErrorNote>
       {data && tab === 'stats' && <AdminStats refreshKey={refreshKey} />}
       {data && tab === 'users' && <Users data={data} act={act} />}

@@ -446,7 +446,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         !(await allowAttempt(deps, `login:${deps.clientKey}`, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, p.data.installId)) ||
         !(await allowAttempt(deps, `login-install:${p.data.installId}`, LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MS, p.data.installId))
       ) {
-        return fail(429, 'too many attempts, try again later');
+        const rows = await deps.db.all<{ window_start: number }>('SELECT window_start FROM attempts WHERE key IN (?, ?)', `login:${deps.clientKey}`, `login-install:${p.data.installId}`);
+        const until = Math.max(0, ...rows.map((r) => r.window_start + LOGIN_WINDOW_MS));
+        const minutes = Math.max(1, Math.ceil((until - deps.now()) / 60_000));
+        return json({ error: `too many attempts – try again in ${minutes} min, or ask the owner to remove the limit`, retryAfterMinutes: minutes }, 429);
       }
       const ok = safeEqual(await sha256Hex(p.data.code), await sha256Hex(deps.adminCode));
       if (!ok) {

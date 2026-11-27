@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, RefreshControl, ScrollView, Switch, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Check, Copy, Crown, FlaskConical, Laptop, LogOut, Mail, Smartphone, Trash2 } from 'lucide-react-native';
-import type { StringKey } from '@fristy/shared';
+import { REQUIRED_SERVER_VERSION, type StringKey } from '@fristy/shared';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
 import {
@@ -23,6 +23,7 @@ import {
   type OwnerStats,
   type AttemptLimit,
   getLimits,
+  getServerVersion,
   resetLimit,
   serverOutdated
 } from '../admin/owner';
@@ -50,6 +51,10 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
   const [stats, setStats] = useState<OwnerStats | null>(null);
   const [log, setLog] = useState<LogEntry[] | null>(null);
   const [limits, setLimits] = useState<AttemptLimit[]>([]);
+  const [serverVersion, setServerVersion] = useState<number | null>(null);
+  useEffect(() => {
+    void getServerVersion().then(setServerVersion);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<Tab>('stats');
@@ -119,7 +124,11 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
           </Pressable>
         ))}
       </View>
-      {(serverOutdated || /not found|error 404/i.test(error ?? '')) && (
+      {serverVersion !== null && serverVersion >= 0 && serverVersion < REQUIRED_SERVER_VERSION ? (
+        <View style={{ backgroundColor: c.warning + '22', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md }}>
+          <Text style={{ color: c.warning, fontWeight: '700' }}>⚠️ {t('owner.serverOld', { have: serverVersion || '≤2', need: REQUIRED_SERVER_VERSION })}</Text>
+        </View>
+      ) : (serverOutdated || /not found|error 404/i.test(error ?? '')) && (
         <View style={{ backgroundColor: c.warning + '22', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md }}>
           <Text style={{ color: c.warning, fontWeight: '700' }}>⚠️ {t('owner.serverOutdated')}</Text>
         </View>

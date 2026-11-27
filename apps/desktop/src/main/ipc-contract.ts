@@ -98,6 +98,7 @@ export const IPC = {
   'owner.inviteDelete': z.object({ code: z.string().min(4).max(16) }).strict(),
   'owner.notifyTest': none,
   'owner.limits': none,
+  'owner.serverVersion': none,
   'owner.limitReset': z.object({ installId: z.string().min(1).max(80).optional(), id: z.string().max(32).optional() }).strict(),
   'owner.redeem': z.object({ code: z.string().min(1).max(32) }).strict(),
   'owner.logout': none,

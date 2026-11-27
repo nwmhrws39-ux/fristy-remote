@@ -334,6 +334,7 @@ export const he: Record<StringKey, string> = {
   'owner.unknownDevice': 'מכשיר לא מזוהה',
   'owner.limitBadge': 'יותר מדי ניסיונות',
   'owner.act.limits.reset': 'הסיר הגבלת ניסיונות של',
+  'owner.serverOld': 'שרת הניהול בגרסה {have}, והאפליקציה צריכה גרסה {need}. במחשב תריץ:  git pull  ואז  cd apps/admin-server  ואז  node setup.mjs --update',
   'owner.stats': 'סטטיסטיקות',
   'owner.dailyUsers': 'משתמשים בכל יום',
   'owner.newUsers': 'משתמשים חדשים',

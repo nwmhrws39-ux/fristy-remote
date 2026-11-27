@@ -74,7 +74,7 @@ jobs:
           zip -qry FRISTY-Remote-unsigned.ipa Payload
           ls -lh FRISTY-Remote-unsigned.ipa
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FRISTY-Remote-iOS
           path: ${{ runner.temp }}/FRISTY-Remote-unsigned.ipa

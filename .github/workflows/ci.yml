@@ -81,7 +81,7 @@ jobs:
           cd apps/desktop/release
           gh release create "v$V" FRISTY-Remote-Setup-$V.exe* latest.yml \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "FRISTY Remote $V" --notes "Windows installer $V" --latest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FRISTY-Remote-Setup
           path: apps/desktop/release/FRISTY-Remote-Setup-*.exe

@@ -98,6 +98,8 @@ export const IPC = {
   'owner.inviteDelete': z.object({ code: z.string().min(4).max(16) }).strict(),
   'owner.notifyTest': none,
   'owner.limits': none,
+  'owner.reports': none,
+  'owner.reportResolve': z.object({ id: z.number().int().positive() }).strict(),
   'legal.accept': z
     .object({
       adult: z.boolean(),

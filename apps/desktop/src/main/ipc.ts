@@ -129,6 +129,8 @@ export function registerIpc(core: FristyCore, secrets: SecretStore, isTrustedUrl
     'owner.inviteDelete': (p: { code: string }) => core.owner.deleteInvite(p.code),
     'owner.notifyTest': () => core.owner.notifyTest(),
     'owner.limits': () => core.owner.limits(),
+    'owner.reports': () => core.owner.reports(),
+    'owner.reportResolve': (p: { id: number }) => core.owner.resolveReport(p.id),
     'legal.accept': (p: { adult: boolean; accepted: boolean; optional?: { relay?: boolean; screen?: boolean; input?: boolean } }) => core.acceptLegal(p),
     'legal.decline': () => {
       core.store.log('info', 'privacy', 'Legal terms declined – quitting');

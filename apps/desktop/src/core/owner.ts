@@ -427,6 +427,14 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
     return this.admin<{ ok: true }>('POST', '/v1/admin/limits/reset', p);
   }
 
+  reports() {
+    return this.admin<{ reports: { id: number; ts: number; installId: string | null; name: string | null; category: string; message: string; contact: string; status: string }[] }>('GET', '/v1/admin/reports');
+  }
+
+  resolveReport(id: number) {
+    return this.admin<{ ok: true }>('POST', '/v1/admin/reports/resolve', { id });
+  }
+
   notifyTest() {
     return this.admin<{ ok: true }>('POST', '/v1/admin/notify-test', {});
   }

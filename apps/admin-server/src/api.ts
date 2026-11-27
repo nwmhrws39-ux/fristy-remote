@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { langOf, renderSite, reportResult } from './site';
 
 /*
  * FRISTY Remote owner service.
@@ -254,6 +255,22 @@ async function ensureExtra(db: Db, id: string) {
   await db.run('INSERT INTO install_extra (install_id) VALUES (?) ON CONFLICT(install_id) DO NOTHING', id);
 }
 
+/* ---------------- legal website report form ---------------- */
+
+async function reportForm(req: Request, url: URL, deps: Deps): Promise<Response> {
+  const he = langOf(url) === 'he';
+  const text = await req.text();
+  if (text.length > 4096) return reportResult(url, he ? 'הדיווח ארוך מדי.' : 'The report is too long.', 400);
+  const f = new URLSearchParams(text);
+  const p = ReportSchema.safeParse({ category: f.get('category') ?? '', message: f.get('message') ?? '', ...(f.get('contact') ? { contact: f.get('contact') } : {}) });
+  if (!p.success) return reportResult(url, he ? 'נא לבחור קטגוריה ולתאר את הבעיה (5–1000 תווים).' : 'Please choose a category and describe the problem (5–1000 characters).', 400);
+  if (!(await allowAttempt(deps, `report:${deps.clientKey}`, 5, LOGIN_WINDOW_MS))) return reportResult(url, he ? 'יותר מדי דיווחים, נסו שוב מאוחר יותר.' : 'Too many reports, try again later.', 429);
+  await deps.db.run('INSERT INTO abuse_reports (ts, install_id, category, message, contact) VALUES (?, NULL, ?, ?, ?)', deps.now(), p.data.category, p.data.message, p.data.contact ?? '');
+  const cfg = await getConfig(deps.db);
+  if (cfg.notifyTopic && deps.notify) deps.notify(cfg.notifyTopic, 'FRISTY Remote', `New report: ${p.data.category}`);
+  return reportResult(url, 'ok', 200);
+}
+
 /* ---------------- user data rights ---------------- */
 
 /** Everything the owner service holds about one install (data access / portability). */
@@ -405,6 +422,14 @@ async function maxVersion(db: Db, kind: string): Promise<string> {
 export async function handle(req: Request, deps: Deps): Promise<Response> {
   const url = new URL(req.url);
   const route = `${req.method} ${url.pathname}`;
+
+  // Legal website (plain HTML, no cookies, no scripts)
+  if (req.method === 'GET' && url.pathname !== '/' && !url.pathname.startsWith('/v1/')) {
+    const page = renderSite(url);
+    if (page) return page;
+  }
+  if (route === 'POST /report-abuse') return reportForm(req, url, deps);
+
   let body: unknown = {};
   if (req.method === 'POST') {
     try {

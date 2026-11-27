@@ -411,6 +411,18 @@ export async function getServerVersion(): Promise<number> {
 }
 export const getLimits = () => request<{ limits: AttemptLimit[] }>('GET', '/v1/admin/limits', undefined, true);
 export const resetLimit = (p: { installId?: string; id?: string }) => request<{ ok: true }>('POST', '/v1/admin/limits/reset', p, true);
+export interface UserReport {
+  id: number;
+  ts: number;
+  installId: string | null;
+  name: string | null;
+  category: string;
+  message: string;
+  contact: string;
+  status: string;
+}
+export const getReports = () => request<{ reports: UserReport[] }>('GET', '/v1/admin/reports', undefined, true);
+export const resolveReport = (id: number) => request<{ ok: true }>('POST', '/v1/admin/reports/resolve', { id }, true);
 export const notifyTest = () => request<{ ok: true }>('POST', '/v1/admin/notify-test', {}, true);
 
 export const updateInstall = (installId: string, patch: { blocked?: boolean; admin?: false; remove?: true; approve?: true; beta?: boolean; message?: string }) =>

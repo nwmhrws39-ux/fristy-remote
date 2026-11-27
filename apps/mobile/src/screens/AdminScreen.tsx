@@ -23,6 +23,9 @@ import {
   type OwnerStats,
   type AttemptLimit,
   getLimits,
+  getReports,
+  resolveReport,
+  type UserReport,
   getServerVersion,
   resetLimit,
   serverOutdated
@@ -51,6 +54,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
   const [stats, setStats] = useState<OwnerStats | null>(null);
   const [log, setLog] = useState<LogEntry[] | null>(null);
   const [limits, setLimits] = useState<AttemptLimit[]>([]);
+  const [reports, setReports] = useState<UserReport[]>([]);
   const [serverVersion, setServerVersion] = useState<number | null>(null);
   useEffect(() => {
     void getServerVersion().then(setServerVersion);
@@ -66,6 +70,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
       setError(null);
       void getStats(14).then(setStats, () => setStats(null));
       void getLimits().then((r) => setLimits(r.limits), () => setLimits([]));
+      void getReports().then((r) => setReports(r.reports), () => setReports([]));
       void getLog().then((r) => setLog(r.entries), () => setLog([]));
     } catch (e) {
       setError((e as Error).message);
@@ -94,11 +99,12 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
 
   const online = data?.installs.filter((i) => i.online).length ?? 0;
   const pending = (data?.installs.filter((i) => i.pending).length ?? 0) + limits.length;
+  const openReports = reports.filter((r) => r.status === 'open').length;
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: 'stats', label: '📊' },
     { id: 'users', label: `👥`, badge: pending },
     { id: 'controls', label: '⚙️' },
-    { id: 'log', label: '📜' }
+    { id: 'log', label: '📜', badge: openReports }
   ];
 
   return (
@@ -140,6 +146,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
       {data && tab === 'users' && <LimitsCard limits={limits} act={act} />}
       {data && tab === 'users' && <UsersCard data={data} act={act} limited={new Set(limits.map((l) => l.installId ?? ''))} />}
       {data && tab === 'controls' && <Controls data={data} save={save} act={act} />}
+      {tab === 'log' && <ReportsCard reports={reports} act={act} />}
       {tab === 'log' && <LogCard entries={log} />}
       </ErrorBoundary>
 
@@ -533,6 +540,32 @@ function NotifyCard({ config, save }: { config: AdminConfig; save: Save }) {
       ) : (
         <Button style={{ marginTop: spacing.md }} label={t('owner.notifyCreate')} onPress={() => void save({ notifyTopic: newTopic() })} />
       )}
+    </Card>
+  );
+}
+
+/* ---------------- reports ---------------- */
+
+function ReportsCard({ reports, act }: { reports: UserReport[]; act: (p: Promise<unknown>) => void }) {
+  const { c, t, prefs } = useApp();
+  return (
+    <Card title={`🚩 ${t('owner.reports')}`}>
+      {reports.length === 0 && <Muted>{t('owner.noReports')}</Muted>}
+      {reports.map((r) => (
+        <View key={r.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.cardBorder, opacity: r.status === 'open' ? 1 : 0.55 }}>
+          <Text style={{ color: r.category === 'other' ? c.text : c.danger, fontWeight: '800', fontSize: font.small }}>{t(`privacy.cat.${r.category}` as StringKey)}</Text>
+          <Text style={{ color: c.textFaint, fontSize: font.tiny }}>
+            {when(r.ts, prefs.language)} · {r.name ?? (r.installId ? r.installId.slice(0, 10) : 'web')}
+          </Text>
+          <Text style={{ color: c.text, marginTop: 4 }}>{r.message}</Text>
+          {!!r.contact && <Text style={{ color: c.textMuted, fontSize: font.tiny }}>✉️ {r.contact}</Text>}
+          {r.status === 'open' ? (
+            <Chip label={t('owner.resolve')} tone={c.success} onPress={() => act(resolveReport(r.id))} />
+          ) : (
+            <Text style={{ color: c.success, fontSize: font.tiny }}>✓ {t('owner.reportResolved')}</Text>
+          )}
+        </View>
+      ))}
     </Card>
   );
 }

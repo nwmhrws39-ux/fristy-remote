@@ -22,6 +22,14 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Legal artifacts are up to date (SBOM, licences, legal website)
+        run: |
+          node scripts/sbom.mjs --check
+          node scripts/build-legal-site.mjs
+          git diff --exit-code -- legal apps/admin-server/src/legal-pages.ts || { echo "::error::Run node scripts/sbom.mjs and node scripts/build-legal-site.mjs and commit the result"; exit 1; }
+      - name: Dependency vulnerability scan (report)
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
       - name: Electron end-to-end smoke test
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb

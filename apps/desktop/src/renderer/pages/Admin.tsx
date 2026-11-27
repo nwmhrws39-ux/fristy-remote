@@ -224,6 +224,7 @@ export function Admin({ state }: { state: CoreState }) {
       {data && tab === 'stats' && <AdminStats refreshKey={refreshKey} />}
       {data && tab === 'users' && <Users data={data} act={act} />}
       {data && tab === 'controls' && <Controls data={data} save={save} act={act} />}
+      {data && tab === 'log' && <Reports refreshKey={refreshKey} />}
       {data && tab === 'log' && <Log refreshKey={refreshKey} />}
     </div>
   );
@@ -660,6 +661,66 @@ function Log({ refreshKey }: { refreshKey: number }) {
               <b>{e.actor}</b> {actionLabel(t, e.action)} {e.target && <b>{e.target}</b>}
               {e.detail && <span className="ms-2 text-xs text-muted">{logDetail(e, lang)}</span>}
             </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------- reports ---------------- */
+
+interface Report {
+  id: number;
+  ts: number;
+  installId: string | null;
+  name: string | null;
+  category: string;
+  message: string;
+  contact: string;
+  status: string;
+}
+
+function Reports({ refreshKey }: { refreshKey: number }) {
+  const { t, lang } = useI18n();
+  const [reports, setReports] = useState<Report[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(() => {
+    invoke<{ reports: Report[] }>('owner.reports').then(
+      (r) => setReports(r.reports),
+      (e) => setError(friendlyOwnerError(errorText(e), t))
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(load, [refreshKey, load]);
+  const open = reports?.filter((r) => r.status === 'open').length ?? 0;
+  return (
+    <Card className={cx('mb-6', open > 0 && 'border-warn/60')} title={<span className="flex items-center gap-2">🚩 {t('owner.reports')} {open > 0 && <Badge tone="warn">{open}</Badge>}</span>}>
+      <ErrorNote>{error}</ErrorNote>
+      {reports?.length === 0 && <p className="text-sm text-faint">{t('owner.noReports')}</p>}
+      <div className="space-y-2">
+        {reports?.map((r) => (
+          <div key={r.id} className={cx('rounded-xl bg-elevated p-3 text-sm', r.status !== 'open' && 'opacity-60')}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={r.category === 'vulnerability' || r.category.startsWith('unauthorized') ? 'bad' : 'neutral'}>{t(`privacy.cat.${r.category}` as StringKey)}</Badge>
+              <span className="text-xs text-faint">{when(r.ts, lang)}</span>
+              <span className="text-xs text-muted">{r.name ?? (r.installId ? r.installId.slice(0, 10) : 'web')}</span>
+              {r.status === 'open' ? (
+                <Button className="ms-auto" variant="ghost" onClick={() => void invoke('owner.reportResolve', { id: r.id }).then(load)}>
+                  {t('owner.resolve')}
+                </Button>
+              ) : (
+                <span className="ms-auto text-xs text-ok">✓ {t('owner.reportResolved')}</span>
+              )}
+            </div>
+            <p className="mt-2 whitespace-pre-wrap" dir="auto">
+              {r.message}
+            </p>
+            {r.contact && (
+              <p className="mt-1 text-xs text-muted" dir="auto">
+                ✉️ {r.contact}
+              </p>
+            )}
           </div>
         ))}
       </div>

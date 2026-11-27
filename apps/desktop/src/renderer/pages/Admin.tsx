@@ -63,6 +63,35 @@ interface Overview {
 }
 
 type Save = (p: Partial<Config>) => Promise<void>;
+
+/** Fills in fields an older owner server does not send yet, so the panel never crashes. */
+function normalize(o: Omit<Partial<Overview>, 'config'> & { config?: Partial<Config> }): Overview & { outdated: boolean } {
+  const c: Partial<Config> = o.config ?? {};
+  return {
+    outdated: !Array.isArray(o.invites),
+    you: o.you ?? '',
+    betaVersions: { pc: o.betaVersions?.pc ?? '', ios: o.betaVersions?.ios ?? '' },
+    invites: Array.isArray(o.invites) ? o.invites : [],
+    installs: (Array.isArray(o.installs) ? o.installs : []).map((i) => ({ ...i, pending: !!i.pending, beta: !!i.beta, message: i.message ?? '' })),
+    config: {
+      locked: !!c.locked,
+      lockMessage: c.lockMessage ?? '',
+      announcement: c.announcement ?? '',
+      minVersion: c.minVersion ?? '',
+      inviteRequired: !!c.inviteRequired,
+      maintenance: c.maintenance ?? null,
+      notifyTopic: c.notifyTopic ?? '',
+      betaChannel: !!c.betaChannel,
+      stablePc: c.stablePc ?? '',
+      stableIos: c.stableIos ?? ''
+    }
+  };
+}
+
+/** "not found" from the owner server means it is older than this app. */
+export function friendlyOwnerError(msg: string, t: (k: StringKey) => string) {
+  return /not found|error 404/i.test(msg) ? t('owner.serverOutdated') : msg;
+}
 type Tab = 'stats' | 'users' | 'controls' | 'log';
 
 
@@ -79,22 +108,23 @@ const when = (ts: number, lang: string) => new Date(ts).toLocaleString(lang === 
 export function Admin({ state }: { state: CoreState }) {
   const { t } = useI18n();
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
-  const [data, setData] = useState<Overview | null>(null);
+  const [data, setData] = useState<(Overview & { outdated: boolean }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [tab, setTab] = useState<Tab>('stats');
 
   const load = useCallback(async () => {
     try {
-      setData(await invoke<Overview>('owner.overview'));
+      setData(normalize(await invoke<Overview>('owner.overview')));
       setRefreshKey((k) => k + 1);
       setSignedIn(true);
       setError(null);
     } catch (e) {
       const msg = errorText(e);
       if (/not signed in|not an admin/i.test(msg)) setSignedIn(false);
-      else setError(msg);
+      else setError(friendlyOwnerError(msg, t));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -118,13 +148,13 @@ export function Admin({ state }: { state: CoreState }) {
   const save: Save = async (patch) => {
     try {
       const r = await invoke<{ config: Config }>('owner.config', patch);
-      setData((d) => (d ? { ...d, config: r.config } : d));
+      setData((d) => (d ? { ...d, config: normalize({ ...d, config: r.config }).config } : d));
       setError(null);
     } catch (e) {
-      setError(errorText(e));
+      setError(friendlyOwnerError(errorText(e), t));
     }
   };
-  const act = (p: Promise<unknown>) => void p.then(load, (e) => setError(errorText(e)));
+  const act = (p: Promise<unknown>) => void p.then(load, (e) => setError(friendlyOwnerError(errorText(e), t)));
   const online = data?.installs.filter((i) => i.online).length ?? 0;
   const pending = data?.installs.filter((i) => i.pending).length ?? 0;
 
@@ -172,6 +202,7 @@ export function Admin({ state }: { state: CoreState }) {
         ))}
       </nav>
 
+      {data?.outdated && <div className="rounded-2xl border border-warn/40 bg-warn/10 p-4 text-sm text-warn">⚠️ {t('owner.serverOutdated')}</div>}
       <ErrorNote>{error}</ErrorNote>
       {data && tab === 'stats' && <AdminStats refreshKey={refreshKey} />}
       {data && tab === 'users' && <Users data={data} act={act} />}
@@ -558,8 +589,9 @@ function Log({ refreshKey }: { refreshKey: number }) {
   useEffect(() => {
     invoke<{ entries: LogEntry[] }>('owner.log').then(
       (r) => setEntries(r.entries),
-      (e) => setError(errorText(e))
+      (e) => setError(friendlyOwnerError(errorText(e), t))
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
   return (
     <Card title={<span className="flex items-center gap-2"><ScrollText className="size-4" /> {t('owner.log')}</span>}>

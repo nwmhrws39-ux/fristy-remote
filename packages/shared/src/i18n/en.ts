@@ -322,6 +322,7 @@ export const en = {
   'owner.act.invite.create': 'created an invite code',
   'owner.act.invite.delete': 'deleted an invite code',
   'owner.act.invite.used': 'joined with invite code',
+  'owner.serverOutdated': "The owner server is an older version and doesn't have this yet. On your PC run:  cd apps/admin-server  →  node setup.mjs --update",
   'owner.stats': 'Statistics',
   'owner.dailyUsers': 'Users per day',
   'owner.newUsers': 'New users',

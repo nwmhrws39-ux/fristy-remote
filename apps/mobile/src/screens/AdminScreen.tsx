@@ -20,9 +20,11 @@ import {
   type InstallInfo,
   type LogEntry,
   type Overview,
-  type OwnerStats
+  type OwnerStats,
+  serverOutdated
 } from '../admin/owner';
 import { Button, Card, ErrorText, Input, Muted, Pill, Title } from '../components/ui';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 const flag = (cc: string | null) => (cc && /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65)) : '🌐');
 
@@ -53,8 +55,8 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
     try {
       setData(await getOverview());
       setError(null);
-      void getStats(14).then(setStats, () => undefined);
-      void getLog().then((r) => setLog(r.entries), () => undefined);
+      void getStats(14).then(setStats, () => setStats(null));
+      void getLog().then((r) => setLog(r.entries), () => setLog([]));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -73,7 +75,7 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
       const r = await setConfig(patch);
       setData((d) => (d ? { ...d, config: r.config } : d));
       setError(null);
-      void getLog().then((x) => setLog(x.entries), () => undefined);
+      void getLog().then((x) => setLog(x.entries), () => setLog([]));
     } catch (e) {
       setError((e as Error).message);
     }
@@ -112,12 +114,19 @@ export function AdminScreen({ onSignedOut }: { onSignedOut: () => void }) {
           </Pressable>
         ))}
       </View>
-      <ErrorText>{error}</ErrorText>
+      {(serverOutdated || /not found|error 404/i.test(error ?? '')) && (
+        <View style={{ backgroundColor: c.warning + '22', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.md }}>
+          <Text style={{ color: c.warning, fontWeight: '700' }}>⚠️ {t('owner.serverOutdated')}</Text>
+        </View>
+      )}
+      <ErrorText>{/not found|error 404/i.test(error ?? '') ? null : error}</ErrorText>
 
-      {data && tab === 'stats' && (stats ? <StatsCard stats={stats} /> : <Muted>…</Muted>)}
+      <ErrorBoundary key={tab}>
+      {data && tab === 'stats' && (stats ? <StatsCard stats={stats} /> : <Muted>{serverOutdated ? '—' : '…'}</Muted>)}
       {data && tab === 'users' && <UsersCard data={data} act={act} />}
       {data && tab === 'controls' && <Controls data={data} save={save} act={act} />}
       {tab === 'log' && <LogCard entries={log} />}
+      </ErrorBoundary>
 
       <Button
         variant="ghost"

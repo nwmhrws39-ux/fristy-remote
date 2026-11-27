@@ -222,7 +222,33 @@ export async function hasAdminToken(): Promise<boolean> {
   return !!(await readJson<string | null>(K_TOKEN, null));
 }
 
-export const getOverview = () => request<Overview>('GET', '/v1/admin/overview', undefined, true);
+/** True when the owner server is older than this app (it lacks the newer admin features). */
+export let serverOutdated = false;
+
+/** Fills in fields an older owner server does not send yet, so the panel never crashes. */
+export async function getOverview(): Promise<Overview> {
+  const o = await request<Omit<Partial<Overview>, 'config'> & { config?: Partial<AdminConfig> }>('GET', '/v1/admin/overview', undefined, true);
+  const c: Partial<AdminConfig> = o.config ?? {};
+  serverOutdated = !Array.isArray(o.invites);
+  return {
+    you: o.you ?? '',
+    betaVersions: { pc: o.betaVersions?.pc ?? '', ios: o.betaVersions?.ios ?? '' },
+    invites: Array.isArray(o.invites) ? o.invites : [],
+    installs: (Array.isArray(o.installs) ? o.installs : []).map((i) => ({ ...i, pending: !!i.pending, beta: !!i.beta, message: i.message ?? '' })),
+    config: {
+      locked: !!c.locked,
+      lockMessage: c.lockMessage ?? '',
+      announcement: c.announcement ?? '',
+      minVersion: c.minVersion ?? '',
+      inviteRequired: !!c.inviteRequired,
+      maintenance: c.maintenance ?? null,
+      notifyTopic: c.notifyTopic ?? '',
+      betaChannel: !!c.betaChannel,
+      stablePc: c.stablePc ?? '',
+      stableIos: c.stableIos ?? ''
+    }
+  };
+}
 
 export interface OwnerStats {
   days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
@@ -231,7 +257,10 @@ export interface OwnerStats {
   totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
 }
 
-export const getStats = (days: number) => request<OwnerStats>('GET', `/v1/admin/stats?days=${days}`, undefined, true);
+export const getStats = async (days: number): Promise<OwnerStats> => {
+  const s = await request<Partial<OwnerStats>>('GET', `/v1/admin/stats?days=${days}`, undefined, true);
+  return { days: s.days ?? [], versions: s.versions ?? [], countries: s.countries ?? [], totals: s.totals ?? { users: 0, phones: 0, pcs: 0, active7: 0, active30: 0 } };
+};
 
 export const setConfig = (c: Partial<AdminConfig>) => request<{ config: AdminConfig }>('POST', '/v1/admin/config', c, true);
 export const getLog = () => request<{ entries: LogEntry[] }>('GET', '/v1/admin/log', undefined, true);

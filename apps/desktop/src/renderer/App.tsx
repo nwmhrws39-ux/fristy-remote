@@ -26,6 +26,7 @@ import { Files } from './pages/Files';
 import { Logs } from './pages/Logs';
 import { Settings } from './pages/Settings';
 import { Admin } from './pages/Admin';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const PAGES = [
   { id: 'dashboard', icon: LayoutDashboard, label: 'nav.dashboard' },
@@ -127,8 +128,11 @@ function Shell({ state }: { state: CoreState }) {
       <main className="flex-1 overflow-y-auto">
         <div className="drag h-10" />
         <div className="mx-auto max-w-6xl px-8 pb-10">
-          <UpdateBanner />
-          <OwnerBanners state={state} />
+          <ErrorBoundary resetKey="banners">
+            <UpdateBanner />
+            <OwnerBanners state={state} />
+          </ErrorBoundary>
+          <ErrorBoundary resetKey={page}>
           {page === 'dashboard' && <Dashboard state={state} go={setPage} />}
           {page === 'devices' && <Devices state={state} />}
           {page === 'games' && <Games />}
@@ -138,6 +142,7 @@ function Shell({ state }: { state: CoreState }) {
           {page === 'logs' && <Logs />}
           {page === 'settings' && <Settings state={state} />}
           {page === 'admin' && <Admin state={state} />}
+          </ErrorBoundary>
         </div>
       </main>
       <PairingRequestDialog request={request} onDone={() => setRequest(null)} />

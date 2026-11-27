@@ -4,6 +4,7 @@ import { errorText, invoke } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { Card, ErrorNote, cx } from '../components/ui';
 import { flag } from '../lib/flag';
+import { friendlyOwnerError } from './Admin';
 
 interface Stats {
   days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
@@ -25,8 +26,8 @@ export function AdminStats({ refreshKey }: { refreshKey: number }) {
   useEffect(() => {
     let alive = true;
     invoke<Stats>('owner.stats', { days }).then(
-      (s) => alive && (setData(s), setError(null)),
-      (e) => alive && setError(errorText(e))
+      (s) => alive && (setData({ ...s, days: s.days ?? [], versions: s.versions ?? [], countries: s.countries ?? [] }), setError(null)),
+      (e) => alive && setError(friendlyOwnerError(errorText(e), t))
     );
     return () => {
       alive = false;

@@ -324,6 +324,7 @@ export const he: Record<StringKey, string> = {
   'owner.act.invite.create': 'יצר קוד הזמנה',
   'owner.act.invite.delete': 'מחק קוד הזמנה',
   'owner.act.invite.used': 'הצטרף עם קוד הזמנה',
+  'owner.serverOutdated': 'שרת הניהול בגרסה ישנה ועדיין אין בו את זה. במחשב תריץ:  cd apps/admin-server  ואז  node setup.mjs --update',
   'owner.stats': 'סטטיסטיקות',
   'owner.dailyUsers': 'משתמשים בכל יום',
   'owner.newUsers': 'משתמשים חדשים',

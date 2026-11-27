@@ -13,6 +13,8 @@ import { forgetHost, loadHosts, type PairedHost } from '../store/hosts';
 import { getIdentity } from '../store/secure';
 import type { NotificationPrefs } from '../store/prefs';
 import { Button, Card, ConfirmDialog, Input, Muted, Title } from '../components/ui';
+import { PrivacyCard } from '../legal/PrivacyCard';
+import { DocLink } from '../legal/LegalScreen';
 
 const NOTIF_LABELS: Record<keyof NotificationPrefs, string> = {
   startup: 'notif.startup',
@@ -152,7 +154,12 @@ export function SettingsScreen({ onAddComputer, onHostsChanged, onOpenAdmin }: {
           <Muted>{t('owner.notice')}</Muted>
         </Card>
       )}
-      <View style={{ alignItems: 'center', marginTop: spacing.md }}>
+      <PrivacyCard onReset={onHostsChanged} />
+      <View style={{ alignItems: 'center', marginTop: spacing.md, gap: 6 }}>
+        <View style={{ flexDirection: 'row', gap: spacing.md }}>
+          <DocLink id="privacy" />
+          <DocLink id="terms" />
+        </View>
         <Text style={{ color: c.textFaint, fontSize: font.tiny }}>FRISTY Remote v{currentVersion()}</Text>
       </View>
 

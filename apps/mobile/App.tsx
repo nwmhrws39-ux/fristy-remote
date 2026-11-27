@@ -24,6 +24,9 @@ import { MacrosScreen } from './src/screens/MacrosScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { AdminScreen } from './src/screens/AdminScreen';
 import { ownerEnabled, startOwner } from './src/admin/owner';
+import { LegalScreen, useLegal } from './src/legal/LegalScreen';
+import { legalStore, loadLegal } from './src/legal/legal';
+import { isAccepted } from '@fristy/shared';
 import { LockScreen, OwnerBanners, UpdateRequiredScreen, WelcomeName, useOwner, useUpdate } from './src/admin/OwnerUi';
 import { startUpdateChecks, updatesEnabled } from './src/admin/updates';
 import { ScreenScreen } from './src/screens/ScreenScreen';
@@ -63,6 +66,12 @@ function Root() {
   const { c, prefs, ready, setPrefs } = useApp();
   const owner = useOwner();
   const update = useUpdate();
+  const legal = useLegal();
+  const [legalLoaded, setLegalLoaded] = useState(legalStore.loaded());
+  useEffect(() => {
+    void loadLegal().then(() => setLegalLoaded(true));
+  }, []);
+  const accepted = isAccepted(legal);
   useEffect(() => {
     void startUpdateChecks();
   }, []);
@@ -83,18 +92,19 @@ function Root() {
   useEffect(() => {
     void (async () => {
       const list = await refreshHosts();
+      if (!accepted) return; // no connections before the terms are accepted
       const active = await getActiveHostKey();
       const host = list.find((h) => h.pk === active) ?? list[0];
       if (host) void connection.connect(host);
     })();
-  }, []);
+  }, [accepted]);
 
   // Route server alerts to local notifications according to the user's preferences.
   useEffect(() => {
     connection.onAlert = (a) => void notify(a.type, a.message, prefs.notifications, prefs.language);
   }, [prefs.notifications, prefs.language]);
 
-  if (!ready || hosts === null) {
+  if (!ready || hosts === null || !legalLoaded) {
     return (
       <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }}>
         <Logo size={64} />
@@ -102,6 +112,9 @@ function Root() {
       </View>
     );
   }
+
+  // Mandatory legal onboarding (again whenever the document version changes).
+  if (!accepted) return <LegalScreen />;
 
   // Mandatory updates: an outdated iPhone version stops working.
   if (updatesEnabled && update.required) return <UpdateRequiredScreen />;

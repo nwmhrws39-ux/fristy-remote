@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import { DEFAULT_ADMIN_API_URL } from '@fristy/shared';
 import { readJson, remove, writeJson } from '../store/secure';
+import { legalAccepted } from '../legal/legal';
 
 /*
  * Client for the optional FRISTY owner service (apps/admin-server).
@@ -175,6 +176,8 @@ async function request<T>(method: 'GET' | 'POST', p: string, body?: unknown, aut
 
 export async function checkIn(invite?: string): Promise<OwnerStatus & { inviteError?: string | null }> {
   if (!ownerEnabled) return status;
+  // nothing is sent before the user has accepted the current terms
+  if (!legalAccepted()) return status;
   const name = userName().trim();
   if (!name) return status;
   let inviteError: string | null = null;
@@ -212,6 +215,36 @@ export async function checkIn(invite?: string): Promise<OwnerStatus & { inviteEr
   return { ...status, inviteError };
 }
 
+/** Everything the owner service stores about this phone (data access / portability). */
+export async function exportMyData(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>('POST', '/v1/me/export', { installId: await installId() });
+}
+
+/** Erases this phone's record on the owner service and starts over with a new install id. */
+export async function deleteMyData(): Promise<{ deleted: boolean }> {
+  const r = await request<{ deleted: boolean }>('POST', '/v1/me/delete', { installId: await installId() });
+  await remove(K_ID);
+  await remove(K_TOKEN);
+  await remove(K_STATUS);
+  return r;
+}
+
+/** Abuse / security report to the operator. */
+export async function sendReport(category: string, message: string, contact?: string): Promise<void> {
+  await request('POST', '/v1/report', { installId: await installId(), category, message, ...(contact ? { contact } : {}) });
+}
+
+/** Starts talking to the owner service right after the terms were accepted. */
+export function resumeOwner() {
+  void checkIn();
+  if (timer) setLive(true);
+}
+
+/** Stops the live channel (used when the user withdraws acceptance). */
+export function stopOwner() {
+  setLive(false);
+}
+
 /** Redeems an invite code for this phone. */
 export async function redeemInvite(code: string): Promise<void> {
   const r = await checkIn(code);
@@ -229,7 +262,7 @@ let liveBackoff = 2000;
 let liveWanted = false;
 
 async function connectLive() {
-  if (!liveWanted || ws || !ownerEnabled) return;
+  if (!liveWanted || ws || !ownerEnabled || !legalAccepted()) return;
   const id = await installId();
   const sock = new WebSocket(`${API.replace(/^http/, 'ws')}/v1/live?installId=${encodeURIComponent(id)}`);
   ws = sock;

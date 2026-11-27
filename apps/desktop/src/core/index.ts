@@ -152,8 +152,7 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       identity: opts.identity,
       pairing: this.pairing,
       handlers,
-      ownerLock: () =>
-        this.updateRequired ?? (this.owner.status.locked && !this.owner.status.admin ? this.owner.status.message : null),
+      ownerLock: () => this.ownerLockMessage(),
       host: () => ({
         hostId: encodeBase64(opts.identity.publicKey),
         computerName: this.computerName,
@@ -162,11 +161,16 @@ export class FristyCore extends EventEmitter<CoreEvents> {
       })
     });
     this.relay = new RelayClient(opts.identity, (t) => this.server.attach(t));
+    let lastReason: string | null = this.owner.status.locked ? this.owner.status.reason : null;
     this.owner.on('status', (st) => {
       if (st.locked) {
-        this.server.disconnectAll(st.message || 'FRISTY Remote has been locked by its owner');
-        this.store.log('security', 'owner', st.reason === 'blocked' ? 'This computer was blocked by the app owner' : 'FRISTY Remote was locked by the app owner');
+        this.server.disconnectAll(this.ownerLockMessage() || 'FRISTY Remote has been locked by its owner');
+        if (lastReason !== st.reason) {
+          const what = { blocked: 'This computer was blocked by the app owner', invite: 'This computer is waiting for an invite code', maintenance: 'FRISTY Remote is under scheduled maintenance', locked: 'FRISTY Remote was locked by the app owner' };
+          this.store.log('security', 'owner', what[st.reason ?? 'locked']);
+        }
       }
+      lastReason = st.locked ? st.reason : null;
       this.emitState();
     });
 
@@ -307,6 +311,20 @@ export class FristyCore extends EventEmitter<CoreEvents> {
   }
 
   /** Blocks phone connections until the app is updated (mandatory updates). */
+  /** Why phones are refused right now (owner lock or mandatory update), or null. */
+  private ownerLockMessage(): string | null {
+    if (this.updateRequired) return this.updateRequired;
+    const o = this.owner.status;
+    if (o.admin) return null;
+    // a scheduled maintenance window starts on time, even between check-ins
+    const m = o.maintenance;
+    if (!o.locked && m && Date.now() >= m.start && Date.now() < m.end) return m.message || 'FRISTY Remote is under maintenance. Try again later.';
+    if (!o.locked) return null;
+    if (o.reason === 'invite') return 'This computer needs an invite code. Open FRISTY Remote on the PC and enter it.';
+    if (o.reason === 'maintenance') return o.message || 'FRISTY Remote is under maintenance. Try again later.';
+    return o.message;
+  }
+
   setUpdateRequired(message: string | null) {
     if (message === this.updateRequired) return;
     this.updateRequired = message;

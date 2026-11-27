@@ -11,7 +11,8 @@ import { autoUpdater } from 'electron-updater';
 
 export type UpdateState =
   | { status: 'disabled' }
-  | { status: 'idle' | 'checking' | 'none'; current: string }
+  | { status: 'idle' | 'checking'; current: string }
+  | { status: 'none'; current: string; held?: string }
   | { status: 'available' | 'downloading'; current: string; version: string; percent: number }
   | { status: 'ready'; current: string; version: string }
   | { status: 'error'; current: string; error: string };
@@ -21,6 +22,12 @@ const CHECK_EVERY_MS = 60 * 60_000;
 export class Updater extends EventEmitter<{ state: [UpdateState] }> {
   state: UpdateState = { status: 'disabled' };
   private timer: NodeJS.Timeout | null = null;
+  /** beta channel: may this install update to `version` yet? */
+  private gate: (version: string) => boolean = () => true;
+
+  setGate(gate: (version: string) => boolean) {
+    this.gate = gate;
+  }
 
   /** True when a newer version exists – the old version must not be used. */
   get required(): boolean {
@@ -38,11 +45,20 @@ export class Updater extends EventEmitter<{ state: [UpdateState] }> {
   }
 
   private wire(current: string) {
-    autoUpdater.autoDownload = true;
+    autoUpdater.autoDownload = false; // downloaded below, once the beta gate allows it
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.on('checking-for-update', () => this.set({ status: 'checking', current }));
     autoUpdater.on('update-not-available', () => this.set({ status: 'none', current }));
-    autoUpdater.on('update-available', (i) => this.set({ status: 'available', current, version: i.version, percent: 0 }));
+    autoUpdater.on('update-available', (i) => {
+      if (!this.gate(i.version)) {
+        // a beta build that has not been released to everyone yet
+        this.set({ status: 'none', current, held: i.version });
+        return;
+      }
+      if (this.state.status === 'downloading' || this.state.status === 'ready') return;
+      this.set({ status: 'available', current, version: i.version, percent: 0 });
+      autoUpdater.downloadUpdate().catch(() => undefined);
+    });
     autoUpdater.on('download-progress', (p) =>
       this.set({ status: 'downloading', current, version: this.state.status === 'available' || this.state.status === 'downloading' ? this.state.version : '', percent: Math.round(p.percent) })
     );

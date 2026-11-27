@@ -75,10 +75,29 @@ export const IPC = {
       locked: z.boolean().optional(),
       lockMessage: z.string().max(300).optional(),
       announcement: z.string().max(500).optional(),
-      minVersion: z.string().regex(/^(\d+\.\d+\.\d+)?$/).optional()
+      minVersion: z.string().max(20).optional(),
+      inviteRequired: z.boolean().optional(),
+      maintenance: z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative(), message: z.string().max(300) }).strict().nullable().optional(),
+      notifyTopic: z.string().max(64).optional(),
+      betaChannel: z.boolean().optional()
     })
     .strict(),
-  'owner.install': z.object({ installId: z.string().min(1).max(80), blocked: z.boolean().optional(), remove: z.literal(true).optional() }).strict(),
+  'owner.install': z
+    .object({
+      installId: z.string().min(1).max(80),
+      blocked: z.boolean().optional(),
+      remove: z.literal(true).optional(),
+      approve: z.literal(true).optional(),
+      beta: z.boolean().optional(),
+      message: z.string().max(300).optional()
+    })
+    .strict(),
+  'owner.log': none,
+  'owner.release': none,
+  'owner.inviteCreate': z.object({ maxUses: z.number().int().min(1).max(1000), note: z.string().max(60) }).strict(),
+  'owner.inviteDelete': z.object({ code: z.string().min(4).max(16) }).strict(),
+  'owner.notifyTest': none,
+  'owner.redeem': z.object({ code: z.string().min(1).max(32) }).strict(),
   'owner.logout': none,
   'update.state': none,
   'update.check': none,

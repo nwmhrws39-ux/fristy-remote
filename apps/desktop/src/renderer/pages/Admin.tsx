@@ -1,29 +1,70 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Crown, KeyRound, Laptop, LogOut, Megaphone, RefreshCw, Smartphone, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  Bell,
+  Check,
+  Copy,
+  Crown,
+  FlaskConical,
+  KeyRound,
+  Laptop,
+  LogOut,
+  Mail,
+  Megaphone,
+  RefreshCw,
+  ScrollText,
+  Smartphone,
+  Ticket,
+  Trash2,
+  Wrench
+} from 'lucide-react';
+import type { StringKey } from '@fristy/shared/src/i18n';
 import { errorText, invoke, type CoreState } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { useAction } from '../lib/hooks';
 import { AdminStats } from './AdminStats';
-import { Badge, Button, Card, Empty, ErrorNote, Field, Toggle, cx, inputClass } from '../components/ui';
+import { flag } from '../lib/flag';
+import { Badge, Button, Card, Empty, ErrorNote, Field, Modal, Toggle, cx, inputClass } from '../components/ui';
 
-interface Overview {
-  config: { locked: boolean; lockMessage: string; announcement: string; minVersion: string };
-  you: string;
-  installs: {
-    id: string;
-    name: string;
-    kind: 'phone' | 'pc';
-    platform: string;
-    appVersion: string;
-    country: string | null;
-    lastSeen: number;
-    online: boolean;
-    blocked: boolean;
-    admin: boolean;
-  }[];
+interface Config {
+  locked: boolean;
+  lockMessage: string;
+  announcement: string;
+  minVersion: string;
+  inviteRequired: boolean;
+  maintenance: { start: number; end: number; message: string } | null;
+  notifyTopic: string;
+  betaChannel: boolean;
+  stablePc: string;
+  stableIos: string;
 }
 
-const flag = (cc: string | null) => (cc && /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 65)) : '🌐');
+interface Install {
+  id: string;
+  name: string;
+  kind: 'phone' | 'pc';
+  platform: string;
+  appVersion: string;
+  country: string | null;
+  lastSeen: number;
+  online: boolean;
+  blocked: boolean;
+  admin: boolean;
+  pending: boolean;
+  beta: boolean;
+  message: string;
+}
+
+interface Overview {
+  config: Config;
+  you: string;
+  betaVersions: { pc: string; ios: string };
+  invites: { code: string; note: string; maxUses: number; uses: number; createdAt: number }[];
+  installs: Install[];
+}
+
+type Save = (p: Partial<Config>) => Promise<void>;
+type Tab = 'stats' | 'users' | 'controls' | 'log';
+
 
 function ago(ts: number): string {
   const m = Math.round((Date.now() - ts) / 60_000);
@@ -32,6 +73,8 @@ function ago(ts: number): string {
   return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
 }
 
+const when = (ts: number, lang: string) => new Date(ts).toLocaleString(lang === 'he' ? 'he-IL' : undefined, { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+
 /** Owner admin panel: sign in with the admin code, then manage everyone who uses the app. */
 export function Admin({ state }: { state: CoreState }) {
   const { t } = useI18n();
@@ -39,6 +82,7 @@ export function Admin({ state }: { state: CoreState }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [tab, setTab] = useState<Tab>('stats');
 
   const load = useCallback(async () => {
     try {
@@ -71,15 +115,25 @@ export function Admin({ state }: { state: CoreState }) {
   }
   if (signedIn === false) return <SignIn onDone={() => void load()} />;
 
-  const save = async (patch: Partial<Overview['config']>) => {
+  const save: Save = async (patch) => {
     try {
-      const r = await invoke<{ config: Overview['config'] }>('owner.config', patch);
+      const r = await invoke<{ config: Config }>('owner.config', patch);
       setData((d) => (d ? { ...d, config: r.config } : d));
+      setError(null);
     } catch (e) {
       setError(errorText(e));
     }
   };
+  const act = (p: Promise<unknown>) => void p.then(load, (e) => setError(errorText(e)));
   const online = data?.installs.filter((i) => i.online).length ?? 0;
+  const pending = data?.installs.filter((i) => i.pending).length ?? 0;
+
+  const TABS: { id: Tab; label: string; badge?: number }[] = [
+    { id: 'stats', label: t('owner.stats') },
+    { id: 'users', label: t('owner.users'), badge: pending },
+    { id: 'controls', label: '⚙️' },
+    { id: 'log', label: t('owner.log') }
+  ];
 
   return (
     <div className="space-y-6">
@@ -91,6 +145,7 @@ export function Admin({ state }: { state: CoreState }) {
           {data && (
             <p className="mt-1 text-sm text-muted">
               {data.installs.length} {t('owner.users')} · {online} {t('owner.onlineNow')}
+              {data.config.locked && <span className="ms-2 text-bad">· 🔒 {t('owner.locked')}</span>}
             </p>
           )}
         </div>
@@ -103,14 +158,144 @@ export function Admin({ state }: { state: CoreState }) {
           </Button>
         </div>
       </header>
+
+      <nav className="flex gap-1 rounded-2xl border border-line bg-card p-1">
+        {TABS.map((x) => (
+          <button
+            key={x.id}
+            onClick={() => setTab(x.id)}
+            className={cx('flex flex-1 items-center justify-center gap-2 rounded-xl py-2 text-sm font-semibold transition', tab === x.id ? 'bg-accent text-white' : 'text-muted hover:text-fg')}
+          >
+            {x.label}
+            {!!x.badge && <span className="rounded-full bg-warn px-1.5 text-[11px] text-black">{x.badge}</span>}
+          </button>
+        ))}
+      </nav>
+
       <ErrorNote>{error}</ErrorNote>
-      {data && <AdminStats refreshKey={refreshKey} />}
-      {data && <AdminBody data={data} save={save} reload={load} onError={setError} />}
+      {data && tab === 'stats' && <AdminStats refreshKey={refreshKey} />}
+      {data && tab === 'users' && <Users data={data} act={act} />}
+      {data && tab === 'controls' && <Controls data={data} save={save} act={act} />}
+      {data && tab === 'log' && <Log refreshKey={refreshKey} />}
     </div>
   );
 }
 
-function AdminBody({ data, save, reload, onError }: { data: Overview; save: (p: Partial<Overview['config']>) => Promise<void>; reload: () => Promise<void>; onError: (e: string) => void }) {
+/* ---------------- users ---------------- */
+
+function Users({ data, act }: { data: Overview; act: (p: Promise<unknown>) => void }) {
+  const { t } = useI18n();
+  const [messageFor, setMessageFor] = useState<Install | null>(null);
+  const sorted = [...data.installs].sort((a, b) => Number(b.pending) - Number(a.pending));
+  const install = (installId: string, patch: Record<string, unknown>) => act(invoke('owner.install', { installId, ...patch }));
+  return (
+    <Card title={`👥 ${t('owner.users')}`}>
+      {data.installs.length === 0 && <Empty>{t('common.none')}</Empty>}
+      <div className="divide-y divide-line">
+        {sorted.map((i) => {
+          const self = i.id === data.you;
+          return (
+            <div key={i.id} className={cx('flex items-center gap-3 py-3', i.pending && 'rounded-xl bg-warn/5 px-2')}>
+              <span className={cx('size-2.5 shrink-0 rounded-full', i.online ? 'bg-ok' : 'bg-faint')} />
+              {i.kind === 'pc' ? <Laptop className="size-5 shrink-0 text-muted" /> : <Smartphone className="size-5 shrink-0 text-muted" />}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2 font-semibold">
+                  <span className="truncate" dir="auto">
+                    {i.name}
+                  </span>
+                  {i.admin && <Crown className="size-4 text-warn" />}
+                  {self && <Badge tone="accent">you</Badge>}
+                  {i.pending && <Badge tone="warn">{t('owner.pending')}</Badge>}
+                  {i.beta && !i.admin && <Badge tone="accent">β {t('owner.betaTester')}</Badge>}
+                  {i.blocked && <Badge tone="bad">{t('owner.block')}</Badge>}
+                </div>
+                <div className="text-xs text-faint">
+                  {flag(i.country)} {i.platform} · v{i.appVersion} · {i.online ? t('owner.onlineNow') : `${t('owner.lastSeen')} ${ago(i.lastSeen)}`}
+                </div>
+                {i.message && (
+                  <div className="mt-1 truncate text-xs text-accent" dir="auto">
+                    ✉️ {i.message}
+                  </div>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {i.pending && (
+                  <Button icon={<Check className="size-4" />} onClick={() => install(i.id, { approve: true })}>
+                    {t('owner.approve')}
+                  </Button>
+                )}
+                <IconButton label={t('owner.messageTo')} onClick={() => setMessageFor(i)}>
+                  <Mail className="size-4" />
+                </IconButton>
+                {!i.admin && (
+                  <IconButton label={t('owner.betaTester')} active={i.beta} onClick={() => install(i.id, { beta: !i.beta })}>
+                    <FlaskConical className="size-4" />
+                  </IconButton>
+                )}
+                {!self && !i.admin && (
+                  <Button variant={i.blocked ? 'ghost' : 'danger'} onClick={() => install(i.id, { blocked: !i.blocked })}>
+                    {i.blocked ? t('owner.unblock') : t('owner.block')}
+                  </Button>
+                )}
+                {!self && !i.admin && (
+                  <IconButton label={t('owner.remove')} onClick={() => confirm(`${t('owner.remove')}: ${i.name}?`) && install(i.id, { remove: true })}>
+                    <Trash2 className="size-4" />
+                  </IconButton>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <MessageDialog install={messageFor} onClose={() => setMessageFor(null)} onSend={(text) => messageFor && install(messageFor.id, { message: text })} />
+    </Card>
+  );
+}
+
+function IconButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      onClick={onClick}
+      className={cx('rounded-xl border p-2 transition', active ? 'border-accent bg-accent/15 text-accent' : 'border-line text-muted hover:bg-elevated hover:text-fg')}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MessageDialog({ install, onClose, onSend }: { install: Install | null; onClose: () => void; onSend: (text: string) => void }) {
+  const { t } = useI18n();
+  const [text, setText] = useState('');
+  useEffect(() => setText(install?.message ?? ''), [install]);
+  return (
+    <Modal
+      open={!!install}
+      onClose={onClose}
+      title={`✉️ ${t('owner.messageTo')} – ${install?.name ?? ''}`}
+      footer={
+        <>
+          {install?.message && (
+            <Button variant="ghost" onClick={() => (onSend(''), onClose())}>
+              {t('common.delete')}
+            </Button>
+          )}
+          <Button disabled={!text.trim()} onClick={() => (onSend(text.trim()), onClose())}>
+            {t('owner.send')}
+          </Button>
+        </>
+      }
+    >
+      <textarea className={cx(inputClass, 'h-28 py-2')} value={text} maxLength={300} autoFocus dir="auto" onChange={(e) => setText(e.target.value)} />
+    </Modal>
+  );
+}
+
+/* ---------------- controls ---------------- */
+
+function Controls({ data, save, act }: { data: Overview; save: Save; act: (p: Promise<unknown>) => void }) {
   const { t } = useI18n();
   const [lockMessage, setLockMessage] = useState(data.config.lockMessage);
   const [announcement, setAnnouncement] = useState(data.config.announcement);
@@ -120,12 +305,12 @@ function AdminBody({ data, save, reload, onError }: { data: Overview; save: (p: 
       <Card className={cx(data.config.locked && 'border-bad')} title={`🔒 ${t('owner.lockAll')}`}>
         <Toggle checked={data.config.locked} onChange={(v) => void save({ locked: v, lockMessage })} label={data.config.locked ? t('owner.locked') : t('common.disabled')} />
         <Field label={t('owner.lockMessage')}>
-          <input className={inputClass} value={lockMessage} maxLength={300} onChange={(e) => setLockMessage(e.target.value)} onBlur={() => void save({ lockMessage })} />
+          <input className={inputClass} value={lockMessage} maxLength={300} dir="auto" onChange={(e) => setLockMessage(e.target.value)} onBlur={() => void save({ lockMessage })} />
         </Field>
       </Card>
 
       <Card title={<span className="flex items-center gap-2"><Megaphone className="size-4" /> {t('owner.announcement')}</span>}>
-        <textarea className={cx(inputClass, 'h-24 py-2')} value={announcement} maxLength={500} onChange={(e) => setAnnouncement(e.target.value)} dir="auto" />
+        <textarea className={cx(inputClass, 'h-20 py-2')} value={announcement} maxLength={500} onChange={(e) => setAnnouncement(e.target.value)} dir="auto" />
         <div className="mt-3 flex gap-2">
           <Button onClick={() => void save({ announcement: announcement.trim() })}>{t('common.save')}</Button>
           <Button variant="ghost" onClick={() => (setAnnouncement(''), void save({ announcement: '' }))}>
@@ -144,53 +329,258 @@ function AdminBody({ data, save, reload, onError }: { data: Overview; save: (p: 
         </div>
       </Card>
 
-      <Card title={`👥 ${t('owner.users')}`} className="lg:col-span-2">
-        {data.installs.length === 0 && <Empty>{t('common.none')}</Empty>}
-        <div className="divide-y divide-line">
-          {data.installs.map((i) => (
-            <div key={i.id} className="flex items-center gap-3 py-3">
-              <span className={cx('size-2.5 rounded-full', i.online ? 'bg-ok' : 'bg-faint')} />
-              {i.kind === 'pc' ? <Laptop className="size-5 text-muted" /> : <Smartphone className="size-5 text-muted" />}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 font-semibold">
-                  <span className="truncate" dir="auto">
-                    {i.name}
-                  </span>
-                  {i.admin && <Crown className="size-4 text-warn" />}
-                  {i.id === data.you && <Badge tone="accent">you</Badge>}
-                  {i.blocked && <Badge tone="bad">{t('owner.block')}</Badge>}
-                </div>
-                <div className="text-xs text-faint">
-                  {flag(i.country)} {i.platform} · v{i.appVersion} · {i.online ? t('owner.onlineNow') : `${t('owner.lastSeen')} ${ago(i.lastSeen)}`}
-                </div>
-              </div>
-              {i.id !== data.you && !i.admin && (
-                <Button
-                  variant={i.blocked ? 'ghost' : 'danger'}
-                  onClick={() =>
-                    void invoke('owner.install', { installId: i.id, blocked: !i.blocked }).then(reload, (e) => onError(errorText(e)))
-                  }
-                >
-                  {i.blocked ? t('owner.unblock') : t('owner.block')}
-                </Button>
-              )}
-              {i.id !== data.you && !i.admin && (
-                <Button
-                  variant="ghost"
-                  aria-label={t('owner.remove')}
-                  icon={<Trash2 className="size-4" />}
-                  onClick={() => {
-                    if (confirm(`${t('owner.remove')}: ${i.name}?`)) void invoke('owner.install', { installId: i.id, remove: true }).then(reload, (e) => onError(errorText(e)));
-                  }}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-      </Card>
+      <Maintenance config={data.config} save={save} />
+      <Invites data={data} save={save} act={act} />
+      <Beta data={data} save={save} act={act} />
+      <Notifications config={data.config} save={save} />
     </div>
   );
 }
+
+const DURATIONS = [15, 30, 60, 120, 240, 480];
+
+function localInput(ts: number) {
+  const d = new Date(ts - new Date(ts).getTimezoneOffset() * 60_000);
+  return d.toISOString().slice(0, 16);
+}
+
+function tonightAt22() {
+  const d = new Date();
+  d.setHours(22, 0, 0, 0);
+  if (d.getTime() < Date.now()) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
+function Maintenance({ config, save }: { config: Config; save: Save }) {
+  const { t, lang } = useI18n();
+  const m = config.maintenance && config.maintenance.end > Date.now() ? config.maintenance : null;
+  const [start, setStart] = useState(localInput(tonightAt22()));
+  const [minutes, setMinutes] = useState(60);
+  const [message, setMessage] = useState('');
+  const active = !!m && m.start <= Date.now();
+  const startTs = new Date(start).getTime();
+  return (
+    <Card className={cx(active && 'border-warn')} title={<span className="flex items-center gap-2"><Wrench className="size-4" /> {t('owner.maintenance')}</span>}>
+      {m ? (
+        <div className={cx('mb-4 rounded-xl p-3 text-sm', active ? 'bg-warn/15 text-warn' : 'bg-elevated')}>
+          {active ? t('owner.maintActive', { end: when(m.end, lang) }) : t('owner.maintUpcoming', { start: when(m.start, lang), end: when(m.end, lang) })}
+          {m.message && <div className="mt-1 text-muted" dir="auto">“{m.message}”</div>}
+          <Button className="mt-3" variant="ghost" onClick={() => void save({ maintenance: null })}>
+            {t('owner.maintCancel')}
+          </Button>
+        </div>
+      ) : (
+        <p className="mb-3 text-sm text-faint">{t('owner.maintNone')}</p>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={t('owner.maintStart')}>
+          <input type="datetime-local" className={inputClass} value={start} onChange={(e) => setStart(e.target.value)} dir="ltr" />
+        </Field>
+        <Field label={t('owner.maintDuration')}>
+          <select className={inputClass} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
+            {DURATIONS.map((d) => (
+              <option key={d} value={d}>
+                {d < 60 ? `${d} ${t('owner.minutes')}` : `${d / 60} ${t('owner.hours')}`}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <Field label={t('owner.maintMessage')}>
+        <input className={inputClass} value={message} maxLength={300} dir="auto" onChange={(e) => setMessage(e.target.value)} />
+      </Field>
+      <Button className="mt-3" disabled={!Number.isFinite(startTs)} onClick={() => void save({ maintenance: { start: startTs, end: startTs + minutes * 60_000, message: message.trim() } })}>
+        {t('owner.maintSchedule')}
+      </Button>
+    </Card>
+  );
+}
+
+function Invites({ data, save, act }: { data: Overview; save: Save; act: (p: Promise<unknown>) => void }) {
+  const { t } = useI18n();
+  const [uses, setUses] = useState(1);
+  const [note, setNote] = useState('');
+  const [fresh, setFresh] = useState<string | null>(null);
+  return (
+    <Card title={<span className="flex items-center gap-2"><Ticket className="size-4" /> {t('owner.invites')}</span>}>
+      <Toggle checked={data.config.inviteRequired} onChange={(v) => void save({ inviteRequired: v })} label={t('owner.inviteRequired')} description={t('owner.inviteHint')} />
+      <div className="mt-4 flex items-end gap-2">
+        <Field label={t('owner.note')}>
+          <input className={inputClass} value={note} maxLength={60} dir="auto" onChange={(e) => setNote(e.target.value)} />
+        </Field>
+        <Field label={t('owner.maxUses')}>
+          <input type="number" min={1} max={1000} className={cx(inputClass, 'w-20')} value={uses} onChange={(e) => setUses(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))} />
+        </Field>
+        <Button
+          className="mb-0.5 whitespace-nowrap"
+          onClick={() =>
+            void invoke<{ code: string }>('owner.inviteCreate', { maxUses: uses, note: note.trim() }).then((r) => {
+              setFresh(r.code);
+              setNote('');
+              act(Promise.resolve());
+            })
+          }
+        >
+          {t('owner.createInvite')}
+        </Button>
+      </div>
+      <div className="mt-3 space-y-1.5">
+        {data.invites.map((i) => (
+          <div key={i.code} className={cx('flex items-center gap-3 rounded-xl px-3 py-2', i.code === fresh ? 'bg-accent/15' : 'bg-elevated', i.uses >= i.maxUses && 'opacity-50')}>
+            <span className="font-mono text-base font-bold tracking-widest" dir="ltr">
+              {i.code}
+            </span>
+            <span className="flex-1 truncate text-xs text-muted" dir="auto">
+              {i.note}
+            </span>
+            <span className="text-xs text-faint">
+              {i.uses}/{i.maxUses}
+            </span>
+            <CopyButton text={i.code} />
+            <IconButton label={t('common.delete')} onClick={() => act(invoke('owner.inviteDelete', { code: i.code }))}>
+              <Trash2 className="size-4" />
+            </IconButton>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function Beta({ data, save, act }: { data: Overview; save: Save; act: (p: Promise<unknown>) => void }) {
+  const { t } = useI18n();
+  const c = data.config;
+  const testers = data.installs.filter((i) => i.beta && !i.admin).length;
+  const newer = (a: string, b: string) => !!a && a !== b;
+  const canRelease = newer(data.betaVersions.pc, c.stablePc) || newer(data.betaVersions.ios, c.stableIos);
+  return (
+    <Card title={<span className="flex items-center gap-2"><FlaskConical className="size-4" /> {t('owner.beta')}</span>}>
+      <Toggle checked={c.betaChannel} onChange={(v) => void save({ betaChannel: v })} label={t('owner.betaOn')} description={t('owner.betaHint')} />
+      {c.betaChannel && (
+        <div className="mt-4 space-y-2 text-sm">
+          <div className="rounded-xl bg-elevated p-3" dir="ltr">
+            <div>{t('owner.stableNow', { pc: c.stablePc || '–', ios: c.stableIos || '–' })}</div>
+            <div className="text-accent">{t('owner.betaNow', { pc: data.betaVersions.pc || '–', ios: data.betaVersions.ios || '–' })}</div>
+            <div className="mt-1 text-xs text-faint">
+              β {t('owner.betaTester')}: {testers}
+            </div>
+          </div>
+          <Button disabled={!canRelease} onClick={() => act(invoke('owner.release'))}>
+            🚀 {t('owner.release')}
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function newTopic() {
+  const b = crypto.getRandomValues(new Uint8Array(12));
+  return `fristy-${Array.from(b, (x) => x.toString(36).padStart(2, '0')).join('').slice(0, 20)}`;
+}
+
+function Notifications({ config, save }: { config: Config; save: Save }) {
+  const { t } = useI18n();
+  const [sent, setSent] = useState<string | null>(null);
+  return (
+    <Card title={<span className="flex items-center gap-2"><Bell className="size-4" /> {t('owner.notify')}</span>}>
+      <p className="text-sm text-muted">{t('owner.notifyHint')}</p>
+      {config.notifyTopic ? (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center gap-2 rounded-xl bg-elevated px-3 py-2">
+            <span className="flex-1 truncate font-mono text-sm" dir="ltr">
+              {config.notifyTopic}
+            </span>
+            <CopyButton text={config.notifyTopic} />
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => void invoke('owner.notifyTest').then(() => setSent('✓'), (e) => setSent(errorText(e)))}>{t('owner.notifyTest')}</Button>
+            <Button variant="ghost" onClick={() => void save({ notifyTopic: '' })}>
+              {t('owner.notifyOff')}
+            </Button>
+            {sent && <span className="self-center text-sm text-ok">{sent}</span>}
+          </div>
+        </div>
+      ) : (
+        <Button className="mt-4" onClick={() => void save({ notifyTopic: newTopic() })}>
+          {t('owner.notifyCreate')}
+        </Button>
+      )}
+    </Card>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const { t } = useI18n();
+  const [done, setDone] = useState(false);
+  return (
+    <IconButton
+      label={done ? t('owner.copied') : t('owner.copy')}
+      onClick={() =>
+        void navigator.clipboard.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        })
+      }
+    >
+      {done ? <Check className="size-4 text-ok" /> : <Copy className="size-4" />}
+    </IconButton>
+  );
+}
+
+/* ---------------- log ---------------- */
+
+interface LogEntry {
+  id: number;
+  ts: number;
+  actor: string;
+  action: string;
+  target: string;
+  detail: string;
+}
+
+export function actionLabel(t: (k: StringKey) => string, action: string): string {
+  const key = `owner.act.${action}` as StringKey;
+  const s = t(key);
+  return s === key ? action : s;
+}
+
+/** Maintenance entries store "start-end" timestamps; show them in local time. */
+function logDetail(e: LogEntry, lang: string) {
+  const m = /^(\d+)-(\d+)$/.exec(e.detail);
+  return e.action === 'maintenance' && m ? `${when(Number(m[1]), lang)} → ${when(Number(m[2]), lang)}` : e.detail;
+}
+
+function Log({ refreshKey }: { refreshKey: number }) {
+  const { t, lang } = useI18n();
+  const [entries, setEntries] = useState<LogEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    invoke<{ entries: LogEntry[] }>('owner.log').then(
+      (r) => setEntries(r.entries),
+      (e) => setError(errorText(e))
+    );
+  }, [refreshKey]);
+  return (
+    <Card title={<span className="flex items-center gap-2"><ScrollText className="size-4" /> {t('owner.log')}</span>}>
+      <ErrorNote>{error}</ErrorNote>
+      {entries?.length === 0 && <Empty>{t('common.none')}</Empty>}
+      <div className="divide-y divide-line">
+        {entries?.map((e) => (
+          <div key={e.id} className="flex items-baseline gap-3 py-2 text-sm">
+            <span className="w-36 shrink-0 text-xs text-faint">{when(e.ts, lang)}</span>
+            <span className={cx('min-w-0 flex-1', e.action === 'login.failed' && 'text-bad')} dir="auto">
+              <b>{e.actor}</b> {actionLabel(t, e.action)} {e.target && <b>{e.target}</b>}
+              {e.detail && <span className="ms-2 text-xs text-muted">{logDetail(e, lang)}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------- sign in ---------------- */
 
 function SignIn({ onDone }: { onDone: () => void }) {
   const { t } = useI18n();

@@ -13,9 +13,9 @@ import {
 import { DEFAULT_GRANTS, type Permission } from '@fristy/protocol';
 import type { StringKey } from '@fristy/shared/src/i18n';
 import { addressKind } from '@fristy/shared/src/wol';
-import { invoke, onPairingRequest, onState, type CoreState, type PendingPairing } from './lib/api';
+import { errorText, invoke, onPairingRequest, onState, type CoreState, type PendingPairing } from './lib/api';
 import { I18nProvider, useI18n } from './lib/i18n';
-import { Badge, Button, Logo, Modal, StatusDot, cx } from './components/ui';
+import { Badge, Button, Logo, Modal, StatusDot, cx, inputClass } from './components/ui';
 import { PermissionPicker } from './components/permissions';
 import { Dashboard } from './pages/Dashboard';
 import { Devices } from './pages/Devices';
@@ -192,15 +192,59 @@ function PairingRequestDialog({ request, onDone }: { request: PendingPairing | n
 }
 
 function OwnerBanners({ state }: { state: CoreState }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const o = state.owner;
+  const [seen, setSeen] = useState(() => {
+    try {
+      return Number(localStorage.getItem('fristy.personalSeen') ?? 0);
+    } catch {
+      return 0;
+    }
+  });
   if (!o?.enabled) return null;
+  const fmt = (ts: number) => new Date(ts).toLocaleString(lang === 'he' ? 'he-IL' : undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' });
+  const m = o.maintenance;
+  const upcoming = m && !(o.locked && o.reason === 'maintenance') && m.start > Date.now() ? m : null;
+  const personal = o.personal && o.personal.at > seen ? o.personal : null;
   return (
     <div className="mb-4 space-y-2">
-      {o.locked && !o.admin && (
-        <div className="rounded-2xl border border-bad/40 bg-bad/10 p-4 text-sm">
-          <div className="font-bold text-bad">{o.reason === 'blocked' ? t('owner.blocked') : t('owner.locked')}</div>
-          <div className="mt-1 text-muted">{o.message || t('owner.lockedHint')}</div>
+      {o.locked && !o.admin && o.reason === 'invite' && <InviteBanner />}
+      {o.locked && !o.admin && o.reason !== 'invite' && (
+        <div className={cx('rounded-2xl border p-4 text-sm', o.reason === 'maintenance' ? 'border-warn/40 bg-warn/10' : 'border-bad/40 bg-bad/10')}>
+          <div className={cx('font-bold', o.reason === 'maintenance' ? 'text-warn' : 'text-bad')}>
+            {o.reason === 'blocked' ? t('owner.blocked') : o.reason === 'maintenance' ? `🔧 ${t('owner.maintTitle')}` : t('owner.locked')}
+          </div>
+          <div className="mt-1 text-muted" dir="auto">
+            {o.reason === 'maintenance' && m ? `${t('owner.maintActive', { end: fmt(m.end) })}${o.message ? ` – ${o.message}` : ''}` : o.message || t('owner.lockedHint')}
+          </div>
+        </div>
+      )}
+      {upcoming && (
+        <div className="rounded-2xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn" dir="auto">
+          🔧 {t('owner.maintUpcoming', { start: fmt(upcoming.start), end: fmt(upcoming.end) })}
+          {upcoming.message && <span className="text-muted"> – {upcoming.message}</span>}
+        </div>
+      )}
+      {personal && (
+        <div className="flex items-start gap-3 rounded-2xl border border-accent/40 bg-accent/10 p-4 text-sm">
+          <div className="flex-1" dir="auto">
+            <div className="text-xs font-semibold text-accent">✉️ {t('owner.messageFromOwner')}</div>
+            <div className="mt-1 text-fg">{personal.text}</div>
+          </div>
+          <button
+            className="rounded-lg px-2 text-muted hover:text-fg"
+            aria-label={t('common.close')}
+            onClick={() => {
+              setSeen(personal.at);
+              try {
+                localStorage.setItem('fristy.personalSeen', String(personal.at));
+              } catch {
+                /* ignore */
+              }
+            }}
+          >
+            ✕
+          </button>
         </div>
       )}
       {o.announcement && (
@@ -210,6 +254,37 @@ function OwnerBanners({ state }: { state: CoreState }) {
       )}
       {o.updateAvailable && <div className="rounded-2xl border border-warn/40 bg-warn/10 p-3 text-sm text-warn">{t('owner.update')}</div>}
     </div>
+  );
+}
+
+/** This PC joined while the app is invite-only: enter the code from the owner. */
+function InviteBanner() {
+  const { t } = useI18n();
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form
+      className="rounded-2xl border border-warn/40 bg-warn/10 p-4 text-sm"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+        void invoke('owner.redeem', { code })
+          .catch((err) => setError(errorText(err)))
+          .finally(() => setBusy(false));
+      }}
+    >
+      <div className="font-bold text-warn">🎟️ {t('owner.inviteTitle')}</div>
+      <div className="mt-1 text-muted">{t('owner.inviteBody')}</div>
+      <div className="mt-3 flex gap-2">
+        <input className={cx(inputClass, 'max-w-56 font-mono uppercase tracking-widest')} dir="ltr" maxLength={16} value={code} onChange={(e) => setCode(e.target.value)} placeholder="ABCD2345" />
+        <Button busy={busy} disabled={code.trim().length < 4}>
+          {t('owner.inviteEnter')}
+        </Button>
+      </div>
+      {error && <div className="mt-2 text-bad">{error}</div>}
+    </form>
   );
 }
 

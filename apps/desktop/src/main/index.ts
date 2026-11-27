@@ -9,7 +9,7 @@ import { createUnsupportedPlatform } from '../core/platform/unsupported';
 import { createWindowsPlatform } from '../core/platform/windows';
 import type { Platform } from '../core/platform/types';
 import { registerIpc } from './ipc';
-import { DEFAULT_ADMIN_API_URL } from '@fristy/shared';
+import { DEFAULT_ADMIN_API_URL, compareVersions } from '@fristy/shared';
 
 /*
  * FRISTY Remote – Electron main process.
@@ -267,6 +267,19 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Beta channel: non-beta installs only update up to the version the owner released.
+  updater.setGate((v) => {
+    const o = core.owner.status;
+    return !o.stableVersion || compareVersions(v, o.stableVersion) <= 0;
+  });
+  let gateKey = `${core.owner.status.beta}|${core.owner.status.stableVersion}`;
+  core.owner.on('status', (o) => {
+    const k = `${o.beta}|${o.stableVersion}`;
+    if (k !== gateKey) {
+      gateKey = k;
+      void updater.check();
+    }
+  });
   registerIpc(core, secrets, trusted, updater);
   updater.on('state', (st) => {
     send('update', st);

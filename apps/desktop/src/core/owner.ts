@@ -10,15 +10,25 @@ import type { Store } from './db';
  * phone connections until it is unlocked again (unless this install is an admin).
  */
 
+export type LockReason = 'locked' | 'blocked' | 'invite' | 'maintenance';
+
 export interface OwnerStatus {
   enabled: boolean;
   locked: boolean;
-  reason: 'locked' | 'blocked' | null;
+  reason: LockReason | null;
   message: string;
   announcement: string;
   updateAvailable: boolean;
   admin: boolean;
   lastCheck: number | null;
+  /** upcoming or running maintenance window */
+  maintenance: { start: number; end: number; message: string } | null;
+  /** message from the owner to this install only */
+  personal: { text: string; at: number } | null;
+  /** beta tester: gets new versions before everyone else */
+  beta: boolean;
+  /** newest version this install may update to ('' = any) */
+  stableVersion: string;
 }
 
 export interface OwnerOptions {
@@ -33,9 +43,24 @@ export interface OwnerOptions {
   tokenStore?: { get(): string | null; set(token: string | null): void };
 }
 
+export interface AdminConfig {
+  locked: boolean;
+  lockMessage: string;
+  announcement: string;
+  minVersion: string;
+  inviteRequired: boolean;
+  maintenance: { start: number; end: number; message: string } | null;
+  notifyTopic: string;
+  betaChannel: boolean;
+  stablePc: string;
+  stableIos: string;
+}
+
 export interface AdminOverview {
-  config: { locked: boolean; lockMessage: string; announcement: string; minVersion: string };
+  config: AdminConfig;
   you: string;
+  betaVersions: { pc: string; ios: string };
+  invites: { code: string; note: string; maxUses: number; uses: number; createdAt: number }[];
   installs: {
     id: string;
     name: string;
@@ -48,16 +73,45 @@ export interface AdminOverview {
     online: boolean;
     blocked: boolean;
     admin: boolean;
+    pending: boolean;
+    beta: boolean;
+    message: string;
   }[];
+}
+
+export interface AdminLogEntry {
+  id: number;
+  ts: number;
+  actor: string;
+  action: string;
+  target: string;
+  detail: string;
 }
 
 export interface OwnerStats {
   days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
   versions: { version: string; kind: string; users: number }[];
+  countries: { country: string | null; users: number }[];
   totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
 }
 
-const DISABLED: OwnerStatus = { enabled: false, locked: false, reason: null, message: '', announcement: '', updateAvailable: false, admin: false, lastCheck: null };
+const DISABLED: OwnerStatus = {
+  enabled: false,
+  locked: false,
+  reason: null,
+  message: '',
+  announcement: '',
+  updateAvailable: false,
+  admin: false,
+  lastCheck: null,
+  maintenance: null,
+  personal: null,
+  beta: false,
+  stableVersion: ''
+};
+
+const REASONS: LockReason[] = ['locked', 'blocked', 'invite', 'maintenance'];
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
   status: OwnerStatus;
@@ -102,8 +156,9 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
     this.timer = null;
   }
 
-  async checkIn(): Promise<OwnerStatus> {
+  async checkIn(invite?: string): Promise<OwnerStatus & { inviteError?: string | null }> {
     if (!this.enabled) return this.status;
+    let inviteError: string | null = null;
     try {
       const res = await this.fetchImpl(this.url('/v1/checkin'), {
         method: 'POST',
@@ -113,25 +168,41 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
           name: this.opts.name().slice(0, 40) || 'PC',
           kind: 'pc',
           platform: this.opts.platform.slice(0, 24),
-          appVersion: this.opts.appVersion
+          appVersion: this.opts.appVersion,
+          ...(invite ? { invite: invite.trim().slice(0, 32) } : {})
         }),
         signal: AbortSignal.timeout(10_000)
       });
       if (!res.ok) return this.status;
-      const b = (await res.json()) as Partial<OwnerStatus>;
+      const b = (await res.json()) as Record<string, unknown>;
+      const m = b.maintenance as OwnerStatus['maintenance'];
+      const pm = b.personal as OwnerStatus['personal'];
+      inviteError = typeof b.inviteError === 'string' ? b.inviteError : null;
       this.update({
         enabled: true,
         locked: !!b.locked,
-        reason: b.reason === 'blocked' || b.reason === 'locked' ? b.reason : null,
+        reason: REASONS.includes(b.reason as LockReason) ? (b.reason as LockReason) : null,
         message: typeof b.message === 'string' ? b.message.slice(0, 300) : '',
         announcement: typeof b.announcement === 'string' ? b.announcement.slice(0, 500) : '',
         updateAvailable: !!b.updateAvailable,
         admin: !!b.admin,
-        lastCheck: Date.now()
+        lastCheck: Date.now(),
+        maintenance: m && typeof m === 'object' ? { start: num(m.start), end: num(m.end), message: String(m.message ?? '').slice(0, 300) } : null,
+        personal: pm && typeof pm === 'object' && pm.text ? { text: String(pm.text).slice(0, 300), at: num(pm.at) } : null,
+        beta: !!b.beta,
+        stableVersion: typeof b.stableVersion === 'string' && /^(\d+\.\d+\.\d+)?$/.test(b.stableVersion) ? b.stableVersion : ''
       });
     } catch {
       /* offline – keep the last known status */
     }
+    return { ...this.status, inviteError };
+  }
+
+  /** Redeems an invite code for this PC. */
+  async redeemInvite(code: string): Promise<OwnerStatus> {
+    const r = await this.checkIn(code);
+    if (r.inviteError) throw new Error(r.inviteError);
+    if (r.lastCheck === null || Date.now() - r.lastCheck > 15_000) throw new Error('The owner service could not be reached');
     return this.status;
   }
 
@@ -192,12 +263,32 @@ export class OwnerClient extends EventEmitter<{ status: [OwnerStatus] }> {
     return this.admin<OwnerStats>('GET', `/v1/admin/stats?days=${Math.round(days)}`);
   }
 
-  setConfig(c: Partial<AdminOverview['config']>) {
-    return this.admin<{ config: AdminOverview['config'] }>('POST', '/v1/admin/config', c);
+  setConfig(c: Partial<AdminConfig>) {
+    return this.admin<{ config: AdminConfig }>('POST', '/v1/admin/config', c);
   }
 
-  updateInstall(installId: string, patch: { blocked?: boolean; remove?: true }) {
+  updateInstall(installId: string, patch: { blocked?: boolean; remove?: true; approve?: true; beta?: boolean; message?: string }) {
     return this.admin<{ ok: true }>('POST', '/v1/admin/install', { installId, ...patch });
+  }
+
+  auditLog() {
+    return this.admin<{ entries: AdminLogEntry[] }>('GET', '/v1/admin/log');
+  }
+
+  release() {
+    return this.admin<{ config: AdminConfig }>('POST', '/v1/admin/release', {});
+  }
+
+  createInvite(maxUses: number, note: string) {
+    return this.admin<{ code: string }>('POST', '/v1/admin/invite', { maxUses, note });
+  }
+
+  deleteInvite(code: string) {
+    return this.admin<{ ok: true }>('POST', '/v1/admin/invite/delete', { code });
+  }
+
+  notifyTest() {
+    return this.admin<{ ok: true }>('POST', '/v1/admin/notify-test', {});
   }
 
   async logout() {

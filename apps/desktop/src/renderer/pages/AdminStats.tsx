@@ -3,10 +3,12 @@ import { BarChart3 } from 'lucide-react';
 import { errorText, invoke } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { Card, ErrorNote, cx } from '../components/ui';
+import { flag } from '../lib/flag';
 
 interface Stats {
   days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
   versions: { version: string; kind: string; users: number }[];
+  countries: { country: string | null; users: number }[];
   totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
 }
 
@@ -100,6 +102,21 @@ export function AdminStats({ refreshKey }: { refreshKey: number }) {
             <Legend color="bg-accent" label={t('owner.phones')} />
             <Legend color="bg-ok" label={t('owner.pcs')} />
             <Legend color="bg-warn" label={t('owner.newUsers')} round />
+          </div>
+
+          <div className="mt-6 mb-2 text-sm font-semibold">{t('owner.countries')}</div>
+          <div className="flex flex-wrap gap-2">
+            {data.countries.map((c) => (
+              <div key={c.country ?? '-'} className="flex items-center gap-2 rounded-xl bg-elevated px-3 py-2" title={c.country ?? '?'}>
+                <span className="text-2xl leading-none">{flag(c.country)}</span>
+                <span className="text-xs text-muted">{c.country ?? '?'}</span>
+                <b className="text-sm">{c.users}</b>
+                <span className="h-1.5 w-12 overflow-hidden rounded-full bg-card">
+                  <span className="block h-full rounded-full bg-accent" style={{ width: `${(c.users / Math.max(1, data.countries[0]?.users ?? 1)) * 100}%` }} />
+                </span>
+              </div>
+            ))}
+            {data.countries.length === 0 && <span className="text-sm text-faint">—</span>}
           </div>
 
           <div className="mt-6 mb-2 text-sm font-semibold">{t('owner.versions')}</div>

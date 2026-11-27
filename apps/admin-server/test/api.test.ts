@@ -171,3 +171,126 @@ it('admins can remove an install and its history', async () => {
   const st = await call('GET', '/v1/admin/stats', undefined, token);
   expect((st.body as { totals: { users: number } }).totals.users).toBe(1);
 });
+
+describe('new owner features', () => {
+  const pc = (id: string, version = '0.2.10', extra: Record<string, unknown> = {}) =>
+    call('POST', '/v1/checkin', { installId: id, name: 'PC', kind: 'pc', platform: 'win32', appVersion: version, ...extra });
+
+  it('keeps schema.sql and the worker schema identical', async () => {
+    const { SCHEMA_SQL } = await import('../src/schema');
+    expect(SCHEMA_SQL).toBe(fs.readFileSync(path.join(__dirname, '..', 'schema.sql'), 'utf8'));
+    const { schemaStatements } = await import('../src/worker');
+    expect(schemaStatements(SCHEMA_SQL).every((s) => s.startsWith('CREATE TABLE IF NOT EXISTS'))).toBe(true);
+  });
+
+  it('invite codes: existing users stay, new users need a code or approval', async () => {
+    const token = await becomeAdmin();
+    await checkin(FRIEND, 'Old friend');
+    now += 1000;
+    await call('POST', '/v1/admin/config', { inviteRequired: true }, token);
+    now += 1000;
+    expect((await checkin(FRIEND)).body).toMatchObject({ locked: false });
+    const NEW = 'new-person-install-03';
+    expect((await checkin(NEW, 'New')).body).toMatchObject({ locked: true, reason: 'invite', announcement: '' });
+    expect((await call('POST', '/v1/checkin', { installId: NEW, name: 'New', kind: 'phone', platform: 'ios', appVersion: '0.1.0', invite: 'WRONG123' })).body).toMatchObject({
+      locked: true,
+      inviteError: 'wrong invite code'
+    });
+    const { code } = (await call('POST', '/v1/admin/invite', { maxUses: 1, note: 'for Dani' }, token)).body as { code: string };
+    expect(code).toMatch(/^[A-Z2-9]{8}$/);
+    const ok = await call('POST', '/v1/checkin', { installId: NEW, name: 'New', kind: 'phone', platform: 'ios', appVersion: '0.1.0', invite: code.toLowerCase() });
+    expect(ok.body).toMatchObject({ locked: false, reason: null });
+    // single-use
+    const OTHER = 'other-person-install-4';
+    expect((await call('POST', '/v1/checkin', { installId: OTHER, name: 'X', kind: 'phone', platform: 'ios', appVersion: '0.1.0', invite: code })).body).toMatchObject({ reason: 'invite' });
+    const o = await call('GET', '/v1/admin/overview', undefined, token);
+    const installs = o.body.installs as { id: string; pending: boolean }[];
+    expect(installs.find((i) => i.id === OTHER)?.pending).toBe(true);
+    expect(installs.find((i) => i.id === NEW)?.pending).toBe(false);
+    expect((o.body.invites as { uses: number }[])[0]?.uses).toBe(1);
+    // manual approval
+    await call('POST', '/v1/admin/install', { installId: OTHER, approve: true }, token);
+    expect((await checkin(OTHER)).body).toMatchObject({ locked: false });
+  });
+
+  it('scheduled maintenance locks everyone but admins only during the window', async () => {
+    const token = await becomeAdmin();
+    await checkin(FRIEND);
+    const start = now + 60 * 60_000;
+    await call('POST', '/v1/admin/config', { maintenance: { start, end: start + 60 * 60_000, message: 'Back soon' } }, token);
+    const before = await checkin(FRIEND);
+    expect(before.body).toMatchObject({ locked: false, maintenance: { start, message: 'Back soon' } });
+    now = start + 1000;
+    expect((await checkin(FRIEND)).body).toMatchObject({ locked: true, reason: 'maintenance', message: 'Back soon' });
+    expect((await checkin(OWNER)).body).toMatchObject({ locked: false });
+    now = start + 2 * 60 * 60_000;
+    expect((await checkin(FRIEND)).body).toMatchObject({ locked: false, maintenance: null });
+    expect((await call('POST', '/v1/admin/config', { maintenance: { start: 10, end: 5, message: '' } }, token)).status).toBe(400);
+  });
+
+  it('personal messages reach only that user', async () => {
+    const token = await becomeAdmin();
+    await checkin(FRIEND);
+    await checkin('someone-else-install-5');
+    await call('POST', '/v1/admin/install', { installId: FRIEND, message: 'Hi Dani!' }, token);
+    expect((await checkin(FRIEND)).body.personal).toMatchObject({ text: 'Hi Dani!' });
+    expect((await checkin('someone-else-install-5')).body.personal).toBeNull();
+    await call('POST', '/v1/admin/install', { installId: FRIEND, message: '' }, token);
+    expect((await checkin(FRIEND)).body.personal).toBeNull();
+  });
+
+  it('beta channel holds new versions until the owner releases them', async () => {
+    const token = await becomeAdmin();
+    await pc('pc-friend-000000000001', '0.2.10');
+    await pc('pc-owner-0000000000002', '0.2.10');
+    await call('POST', '/v1/admin/login', { installId: 'pc-owner-0000000000002', code: CODE });
+    await call('POST', '/v1/admin/config', { betaChannel: true }, token);
+    expect((await pc('pc-friend-000000000001', '0.2.10')).body).toMatchObject({ beta: false, stableVersion: '0.2.10' });
+    expect((await pc('pc-owner-0000000000002', '0.2.12')).body).toMatchObject({ beta: true, stableVersion: '' });
+    await call('POST', '/v1/admin/install', { installId: 'pc-friend-000000000001', beta: true }, token);
+    expect((await pc('pc-friend-000000000001')).body).toMatchObject({ beta: true, stableVersion: '' });
+    await call('POST', '/v1/admin/install', { installId: 'pc-friend-000000000001', beta: false }, token);
+    const r = await call('POST', '/v1/admin/release', {}, token);
+    expect((r.body.config as { stablePc: string }).stablePc).toBe('0.2.12');
+    expect((await pc('pc-friend-000000000001')).body).toMatchObject({ stableVersion: '0.2.12' });
+    await call('POST', '/v1/admin/config', { betaChannel: false }, token);
+    expect((await pc('pc-friend-000000000001')).body).toMatchObject({ stableVersion: '' });
+  });
+
+  it('notifies the owner about new users without names', async () => {
+    const sent: string[] = [];
+    const notify = (_t: string, _title: string, m: string) => void sent.push(m);
+    const token = await becomeAdmin();
+    expect((await call('POST', '/v1/admin/notify-test', {}, token, { notify })).status).toBe(400);
+    expect((await call('POST', '/v1/admin/config', { notifyTopic: 'short' }, token)).status).toBe(400);
+    await call('POST', '/v1/admin/config', { notifyTopic: 'fristy-abcdefghijkl' }, token);
+    await call('POST', '/v1/checkin', { installId: FRIEND, name: 'Secret Name', kind: 'phone', platform: 'ios', appVersion: '0.1.0' }, undefined, { notify });
+    await call('POST', '/v1/checkin', { installId: FRIEND, name: 'Secret Name', kind: 'phone', platform: 'ios', appVersion: '0.1.0' }, undefined, { notify });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('New user joined');
+    expect(sent[0]).not.toContain('Secret');
+  });
+
+  it('writes an audit log of admin actions', async () => {
+    const token = await becomeAdmin();
+    await checkin(FRIEND, 'Dani');
+    await call('POST', '/v1/admin/config', { locked: true }, token);
+    await call('POST', '/v1/admin/install', { installId: FRIEND, blocked: true }, token);
+    await call('POST', '/v1/admin/login', { installId: FRIEND, code: 'nope' });
+    const log = (await call('GET', '/v1/admin/log', undefined, token)).body.entries as { action: string; actor: string; target: string }[];
+    expect(log.map((e) => e.action)).toEqual(['login.failed', 'block', 'lock', 'login']);
+    expect(log[1]).toMatchObject({ actor: 'Owner', target: 'Dani' });
+    expect((await call('GET', '/v1/admin/log')).status).toBe(401);
+  });
+
+  it('reports users by country', async () => {
+    const token = await becomeAdmin();
+    await checkin(FRIEND);
+    await call('POST', '/v1/checkin', { installId: 'us-user-install-0006', name: 'A', kind: 'phone', platform: 'ios', appVersion: '0.1.0' }, undefined, { country: 'US' });
+    const s = (await call('GET', '/v1/admin/stats', undefined, token)).body as unknown as import('../src/api').Stats;
+    expect(s.countries).toEqual([
+      { country: 'IL', users: 2 },
+      { country: 'US', users: 1 }
+    ]);
+  });
+});

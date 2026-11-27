@@ -9,8 +9,11 @@ import { z } from 'zod';
  *   2-letter country code.
  * - The owner unlocks the admin role by entering a code that is verified
  *   HERE (never in the app), with a strict attempt limit.
- * - Admins can lock the app for everyone else, block single installs,
- *   publish an announcement and a minimum version.
+ * - Admins can lock the app for everyone else (now or on a schedule), block
+ *   or remove single installs, require invite codes for new users, send an
+ *   announcement or a personal message, hold new versions for beta testers,
+ *   and get a notification (ntfy) when someone new joins. Every admin action
+ *   is written to an audit log.
  * - This service has no way to reach anyone's computer: it only decides
  *   whether the FRISTY apps themselves keep working.
  */
@@ -30,13 +33,21 @@ export interface Deps {
   country: string | null;
   /** opaque per-caller key for rate limiting (hashed, never stored raw) */
   clientKey: string;
+  /** sends a push notification to an ntfy topic (fire and forget) */
+  notify?: (topic: string, title: string, message: string) => void;
 }
 
 const ONLINE_MS = 20 * 60_000;
+const DAY_MS = 86_400_000;
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_WINDOW_MS = 60 * 60_000;
+const INVITE_MAX_ATTEMPTS = 10;
+const STATS_DAYS_MAX = 90;
+const LOG_KEEP = 500;
 
 const InstallId = z.string().regex(/^[A-Za-z0-9-]{16,64}$/);
+const Version = z.string().regex(/^\d+\.\d+\.\d+$/);
+const InviteCode = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{4,16}$/);
 
 const CheckinSchema = z
   .object({
@@ -44,7 +55,8 @@ const CheckinSchema = z
     name: z.string().trim().min(1).max(40),
     kind: z.enum(['phone', 'pc']),
     platform: z.string().max(24),
-    appVersion: z.string().regex(/^\d+\.\d+\.\d+$/)
+    appVersion: Version,
+    invite: z.string().max(32).optional()
   })
   .strict();
 
@@ -58,61 +70,49 @@ const ConfigSchema = z
     minVersion: z
       .string()
       .regex(/^(\d+\.\d+\.\d+)?$/)
-      .optional()
+      .optional(),
+    inviteRequired: z.boolean().optional(),
+    maintenance: z
+      .object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative(), message: z.string().max(300) })
+      .refine((m) => m.end > m.start, 'end must be after start')
+      .nullable()
+      .optional(),
+    notifyTopic: z
+      .string()
+      .regex(/^([A-Za-z0-9_-]{12,64})?$/)
+      .optional(),
+    betaChannel: z.boolean().optional()
   })
   .strict();
 
-const STATS_DAYS_MAX = 90;
-const dayKey = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+const InstallUpdateSchema = z
+  .object({
+    installId: InstallId,
+    blocked: z.boolean().optional(),
+    admin: z.literal(false).optional(),
+    remove: z.literal(true).optional(),
+    approve: z.literal(true).optional(),
+    beta: z.boolean().optional(),
+    message: z.string().max(300).optional()
+  })
+  .strict();
 
-export interface Stats {
-  days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
-  versions: { version: string; kind: string; users: number }[];
-  totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
-}
-
-async function stats(deps: Deps, days: number): Promise<Stats> {
-  const now = deps.now();
-  const from = dayKey(now - (days - 1) * 86_400_000);
-  const active = await deps.db.all<{ day: string; kind: string; n: number }>(
-    'SELECT day, kind, COUNT(*) AS n FROM daily_activity WHERE day >= ? GROUP BY day, kind',
-    from
-  );
-  const fresh = await deps.db.all<{ first_seen: number }>('SELECT first_seen FROM installs WHERE first_seen >= ?', Date.parse(`${from}T00:00:00Z`));
-  const out: Stats['days'] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const day = dayKey(now - i * 86_400_000);
-    const phones = active.find((a) => a.day === day && a.kind === 'phone')?.n ?? 0;
-    const pcs = active.find((a) => a.day === day && a.kind === 'pc')?.n ?? 0;
-    out.push({ day, users: phones + pcs, phones, pcs, newUsers: fresh.filter((f) => dayKey(f.first_seen) === day).length });
-  }
-  // versions of everyone seen in the last 30 days
-  const versions = await deps.db.all<{ version: string; kind: string; users: number }>(
-    'SELECT app_version AS version, kind, COUNT(*) AS users FROM installs WHERE last_seen >= ? GROUP BY app_version, kind',
-    now - 30 * 86_400_000
-  );
-  versions.sort((a, b) => compareVersions(b.version, a.version) || a.kind.localeCompare(b.kind));
-  const count = async (sql: string, ...p: number[]) => (await deps.db.first<{ n: number }>(sql, ...p))?.n ?? 0;
-  return {
-    days: out,
-    versions,
-    totals: {
-      users: await count('SELECT COUNT(*) AS n FROM installs'),
-      phones: await count("SELECT COUNT(*) AS n FROM installs WHERE kind = 'phone'"),
-      pcs: await count("SELECT COUNT(*) AS n FROM installs WHERE kind = 'pc'"),
-      active7: await count('SELECT COUNT(*) AS n FROM installs WHERE last_seen >= ?', now - 7 * 86_400_000),
-      active30: await count('SELECT COUNT(*) AS n FROM installs WHERE last_seen >= ?', now - 30 * 86_400_000)
-    }
-  };
-}
-
-const InstallUpdateSchema = z.object({ installId: InstallId, blocked: z.boolean().optional(), admin: z.literal(false).optional(), remove: z.literal(true).optional() }).strict();
+const InviteCreateSchema = z.object({ maxUses: z.number().int().min(1).max(1000), note: z.string().max(60).optional() }).strict();
+const InviteDeleteSchema = z.object({ code: InviteCode }).strict();
 
 export interface AppConfig {
   locked: boolean;
   lockMessage: string;
   announcement: string;
   minVersion: string;
+  inviteRequired: boolean;
+  /** installs first seen before this time never need an invite */
+  inviteSince: number;
+  maintenance: { start: number; end: number; message: string } | null;
+  notifyTopic: string;
+  betaChannel: boolean;
+  stablePc: string;
+  stableIos: string;
 }
 
 /* ---------------- helpers ---------------- */
@@ -154,14 +154,36 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+const dayKey = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+
+/** Unambiguous characters only (no 0/O, 1/I). */
+function newInviteCode(): string {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => abc[b % abc.length]).join('');
+}
+
 async function getConfig(db: Db): Promise<AppConfig> {
   const rows = await db.all<{ key: string; value: string }>('SELECT key, value FROM config');
   const m = new Map(rows.map((r) => [r.key, r.value]));
+  let maintenance: AppConfig['maintenance'] = null;
+  try {
+    const v = JSON.parse(m.get('maintenance') ?? 'null') as AppConfig['maintenance'];
+    if (v && typeof v.start === 'number' && typeof v.end === 'number') maintenance = { start: v.start, end: v.end, message: String(v.message ?? '') };
+  } catch {
+    /* ignore */
+  }
   return {
     locked: m.get('locked') === '1',
     lockMessage: m.get('lockMessage') ?? '',
     announcement: m.get('announcement') ?? '',
-    minVersion: m.get('minVersion') ?? ''
+    minVersion: m.get('minVersion') ?? '',
+    inviteRequired: m.get('inviteRequired') === '1',
+    inviteSince: Number(m.get('inviteSince') ?? 0),
+    maintenance,
+    notifyTopic: m.get('notifyTopic') ?? '',
+    betaChannel: m.get('betaChannel') === '1',
+    stablePc: m.get('stablePc') ?? '',
+    stableIos: m.get('stableIos') ?? ''
   };
 }
 
@@ -192,6 +214,82 @@ async function allowAttempt(deps: Deps, key: string, max: number, windowMs: numb
   return true;
 }
 
+async function audit(deps: Deps, actor: string, action: string, target = '', detail = '') {
+  await deps.db.run('INSERT INTO admin_log (ts, actor, action, target, detail) VALUES (?, ?, ?, ?, ?)', deps.now(), actor, action, target, detail.slice(0, 300));
+  await deps.db.run('DELETE FROM admin_log WHERE id <= (SELECT MAX(id) FROM admin_log) - ?', LOG_KEEP);
+}
+
+async function installName(db: Db, id: string): Promise<string> {
+  return (await db.first<{ name: string }>('SELECT name FROM installs WHERE id = ?', id))?.name ?? id.slice(0, 12);
+}
+
+async function ensureExtra(db: Db, id: string) {
+  await db.run('INSERT INTO install_extra (install_id) VALUES (?) ON CONFLICT(install_id) DO NOTHING', id);
+}
+
+/* ---------------- statistics ---------------- */
+
+export interface Stats {
+  days: { day: string; users: number; phones: number; pcs: number; newUsers: number }[];
+  versions: { version: string; kind: string; users: number }[];
+  countries: { country: string | null; users: number }[];
+  totals: { users: number; phones: number; pcs: number; active7: number; active30: number };
+}
+
+async function stats(deps: Deps, days: number): Promise<Stats> {
+  const now = deps.now();
+  const from = dayKey(now - (days - 1) * DAY_MS);
+  const active = await deps.db.all<{ day: string; kind: string; n: number }>(
+    'SELECT day, kind, COUNT(*) AS n FROM daily_activity WHERE day >= ? GROUP BY day, kind',
+    from
+  );
+  const fresh = await deps.db.all<{ first_seen: number }>('SELECT first_seen FROM installs WHERE first_seen >= ?', Date.parse(`${from}T00:00:00Z`));
+  const out: Stats['days'] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = dayKey(now - i * DAY_MS);
+    const phones = active.find((a) => a.day === day && a.kind === 'phone')?.n ?? 0;
+    const pcs = active.find((a) => a.day === day && a.kind === 'pc')?.n ?? 0;
+    out.push({ day, users: phones + pcs, phones, pcs, newUsers: fresh.filter((f) => dayKey(f.first_seen) === day).length });
+  }
+  const since30 = now - 30 * DAY_MS;
+  const versions = await deps.db.all<{ version: string; kind: string; users: number }>(
+    'SELECT app_version AS version, kind, COUNT(*) AS users FROM installs WHERE last_seen >= ? GROUP BY app_version, kind',
+    since30
+  );
+  versions.sort((a, b) => compareVersions(b.version, a.version) || a.kind.localeCompare(b.kind));
+  const countries = await deps.db.all<{ country: string | null; users: number }>(
+    'SELECT country, COUNT(*) AS users FROM installs WHERE last_seen >= ? GROUP BY country ORDER BY users DESC LIMIT 50',
+    since30
+  );
+  const count = async (sql: string, ...p: number[]) => (await deps.db.first<{ n: number }>(sql, ...p))?.n ?? 0;
+  return {
+    days: out,
+    versions,
+    countries,
+    totals: {
+      users: await count('SELECT COUNT(*) AS n FROM installs'),
+      phones: await count("SELECT COUNT(*) AS n FROM installs WHERE kind = 'phone'"),
+      pcs: await count("SELECT COUNT(*) AS n FROM installs WHERE kind = 'pc'"),
+      active7: await count('SELECT COUNT(*) AS n FROM installs WHERE last_seen >= ?', now - 7 * DAY_MS),
+      active30: await count('SELECT COUNT(*) AS n FROM installs WHERE last_seen >= ?', since30)
+    }
+  };
+}
+
+/** Highest version of each app kind that beta testers (and admins) are running. */
+async function betaVersions(db: Db): Promise<{ pc: string; ios: string }> {
+  const rows = await db.all<{ kind: string; app_version: string }>(
+    'SELECT i.kind, i.app_version FROM installs i LEFT JOIN install_extra e ON e.install_id = i.id WHERE i.admin = 1 OR e.beta = 1'
+  );
+  const max = (kind: string) => rows.filter((r) => r.kind === kind).reduce((m, r) => (!m || compareVersions(r.app_version, m) > 0 ? r.app_version : m), '');
+  return { pc: max('pc'), ios: max('phone') };
+}
+
+async function maxVersion(db: Db, kind: string): Promise<string> {
+  const rows = await db.all<{ app_version: string }>('SELECT DISTINCT app_version FROM installs WHERE kind = ?', kind);
+  return rows.reduce((m, r) => (!m || compareVersions(r.app_version, m) > 0 ? r.app_version : m), '');
+}
+
 /* ---------------- request handling ---------------- */
 
 export async function handle(req: Request, deps: Deps): Promise<Response> {
@@ -215,6 +313,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (!p.success) return fail(400, 'invalid check-in');
       const c = p.data;
       const now = deps.now();
+      const existed = await deps.db.first<{ id: string }>('SELECT id FROM installs WHERE id = ?', c.installId);
       await deps.db.run(
         `INSERT INTO installs (id, name, kind, platform, app_version, country, first_seen, last_seen)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -237,18 +336,62 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         c.kind,
         c.appVersion
       );
-      const inst = await deps.db.first<{ blocked: number; admin: number }>('SELECT blocked, admin FROM installs WHERE id = ?', c.installId);
+      const inst = await deps.db.first<{ blocked: number; admin: number; first_seen: number; invited: number | null; beta: number | null; message: string | null; message_at: number | null }>(
+        `SELECT i.blocked, i.admin, i.first_seen, e.invited, e.beta, e.message, e.message_at
+         FROM installs i LEFT JOIN install_extra e ON e.install_id = i.id WHERE i.id = ?`,
+        c.installId
+      );
       const cfg = await getConfig(deps.db);
       const admin = inst?.admin === 1;
+
+      // Invite codes: only installs that joined after "invite required" was switched on need one.
+      let invited = !cfg.inviteRequired || admin || inst?.invited === 1 || (inst?.first_seen ?? now) < cfg.inviteSince;
+      let inviteError: string | null = null;
+      if (!invited && c.invite) {
+        const code = InviteCode.safeParse(c.invite);
+        if (!(await allowAttempt(deps, `invite:${deps.clientKey}`, INVITE_MAX_ATTEMPTS, LOGIN_WINDOW_MS))) inviteError = 'too many attempts, try again later';
+        else if (!code.success) inviteError = 'wrong invite code';
+        else {
+          const inv = await deps.db.first<{ max_uses: number; uses: number }>('SELECT max_uses, uses FROM invites WHERE code = ?', code.data);
+          if (!inv || inv.uses >= inv.max_uses) inviteError = 'wrong invite code';
+          else {
+            await deps.db.run('UPDATE invites SET uses = uses + 1 WHERE code = ?', code.data);
+            await ensureExtra(deps.db, c.installId);
+            await deps.db.run('UPDATE install_extra SET invited = 1 WHERE install_id = ?', c.installId);
+            await audit(deps, c.installId, 'invite.used', c.installId, code.data);
+            invited = true;
+          }
+        }
+      }
+
+      if (!existed && cfg.notifyTopic && deps.notify) {
+        const flag = deps.country ?? '';
+        deps.notify(
+          cfg.notifyTopic,
+          'FRISTY Remote',
+          `${invited ? 'New user joined' : 'New user is waiting for an invite'}: ${c.kind === 'pc' ? '💻 PC' : '📱 phone'} ${flag}`.trim()
+        );
+      }
+
+      const m = cfg.maintenance;
+      const inMaintenance = !!m && now >= m.start && now < m.end;
       const blocked = inst?.blocked === 1 && !admin;
-      const locked = blocked || (cfg.locked && !admin);
+      const reason = blocked ? 'blocked' : !invited ? 'invite' : inMaintenance && !admin ? 'maintenance' : cfg.locked && !admin ? 'locked' : null;
+      const beta = admin || inst?.beta === 1;
       return json({
-        locked,
-        reason: blocked ? 'blocked' : locked ? 'locked' : null,
-        message: locked ? cfg.lockMessage : '',
-        announcement: cfg.announcement,
+        locked: reason !== null,
+        reason,
+        message: reason === 'locked' ? cfg.lockMessage : reason === 'maintenance' ? (m?.message ?? '') : '',
+        announcement: invited ? cfg.announcement : '',
         updateAvailable: !!cfg.minVersion && compareVersions(c.appVersion, cfg.minVersion) < 0,
-        admin
+        admin,
+        // upcoming or running maintenance window, for the "will be locked at …" banner
+        maintenance: m && now < m.end && now > m.start - 7 * DAY_MS ? m : null,
+        personal: invited && inst?.message ? { text: inst.message, at: inst.message_at ?? 0 } : null,
+        beta,
+        // newest version this install may update to ('' = any)
+        stableVersion: cfg.betaChannel && !beta ? (c.kind === 'pc' ? cfg.stablePc : cfg.stableIos) : '',
+        inviteError
       });
     }
 
@@ -260,13 +403,17 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         return fail(429, 'too many attempts, try again later');
       }
       const ok = safeEqual(await sha256Hex(p.data.code), await sha256Hex(deps.adminCode));
-      if (!ok) return fail(403, 'wrong code');
+      if (!ok) {
+        await audit(deps, p.data.installId, 'login.failed');
+        return fail(403, 'wrong code');
+      }
       const inst = await deps.db.first<{ id: string }>('SELECT id FROM installs WHERE id = ?', p.data.installId);
       if (!inst) return fail(404, 'check in first');
       await deps.db.run('UPDATE installs SET admin = 1, blocked = 0 WHERE id = ?', p.data.installId);
       const bytes = crypto.getRandomValues(new Uint8Array(32));
       const token = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
       await deps.db.run('INSERT INTO admin_tokens (token_hash, install_id, created_at) VALUES (?, ?, ?)', await sha256Hex(token), p.data.installId, deps.now());
+      await audit(deps, p.data.installId, 'login');
       return json({ token });
     }
   }
@@ -278,6 +425,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     switch (route) {
       case 'GET /v1/admin/overview': {
+        const cfg = await getConfig(deps.db);
         const installs = await deps.db.all<{
           id: string;
           name: string;
@@ -289,11 +437,17 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           last_seen: number;
           blocked: number;
           admin: number;
-        }>('SELECT * FROM installs ORDER BY last_seen DESC LIMIT 500');
+          invited: number | null;
+          beta: number | null;
+          message: string | null;
+        }>('SELECT i.*, e.invited, e.beta, e.message FROM installs i LEFT JOIN install_extra e ON e.install_id = i.id ORDER BY i.last_seen DESC LIMIT 500');
+        const invites = await deps.db.all<{ code: string; note: string; max_uses: number; uses: number; created_at: number }>('SELECT * FROM invites ORDER BY created_at DESC LIMIT 100');
         const now = deps.now();
         return json({
-          config: await getConfig(deps.db),
+          config: cfg,
           you: adminId,
+          betaVersions: await betaVersions(deps.db),
+          invites: invites.map((i) => ({ code: i.code, note: i.note, maxUses: i.max_uses, uses: i.uses, createdAt: i.created_at })),
           installs: installs.map((i) => ({
             id: i.id,
             name: i.name,
@@ -305,7 +459,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
             lastSeen: i.last_seen,
             online: now - i.last_seen < ONLINE_MS,
             blocked: i.blocked === 1,
-            admin: i.admin === 1
+            admin: i.admin === 1,
+            pending: cfg.inviteRequired && i.admin !== 1 && i.invited !== 1 && i.first_seen >= cfg.inviteSince,
+            beta: i.beta === 1,
+            message: i.message ?? ''
           }))
         });
       }
@@ -315,33 +472,138 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         return json(await stats(deps, days));
       }
 
+      case 'GET /v1/admin/log': {
+        const rows = await deps.db.all<{ id: number; ts: number; actor: string; action: string; target: string; detail: string; actor_name: string | null; target_name: string | null }>(
+          `SELECT l.*, a.name AS actor_name, t.name AS target_name FROM admin_log l
+           LEFT JOIN installs a ON a.id = l.actor LEFT JOIN installs t ON t.id = l.target
+           ORDER BY l.id DESC LIMIT 150`
+        );
+        return json({
+          entries: rows.map((r) => ({ id: r.id, ts: r.ts, actor: r.actor_name ?? r.actor.slice(0, 12), action: r.action, target: r.target ? (r.target_name ?? r.target.slice(0, 12)) : '', detail: r.detail }))
+        });
+      }
+
       case 'POST /v1/admin/config': {
         const p = ConfigSchema.safeParse(body);
         if (!p.success) return fail(400, 'invalid config');
         const c = p.data;
-        if (c.locked !== undefined) await setConfig(deps.db, 'locked', c.locked ? '1' : '0');
-        if (c.lockMessage !== undefined) await setConfig(deps.db, 'lockMessage', c.lockMessage);
-        if (c.announcement !== undefined) await setConfig(deps.db, 'announcement', c.announcement);
-        if (c.minVersion !== undefined) await setConfig(deps.db, 'minVersion', c.minVersion);
+        const before = await getConfig(deps.db);
+        if (c.locked !== undefined && c.locked !== before.locked) {
+          await setConfig(deps.db, 'locked', c.locked ? '1' : '0');
+          await audit(deps, adminId, c.locked ? 'lock' : 'unlock');
+        }
+        if (c.lockMessage !== undefined && c.lockMessage !== before.lockMessage) {
+          await setConfig(deps.db, 'lockMessage', c.lockMessage);
+          await audit(deps, adminId, 'lock.message', '', c.lockMessage);
+        }
+        if (c.announcement !== undefined && c.announcement !== before.announcement) {
+          await setConfig(deps.db, 'announcement', c.announcement);
+          await audit(deps, adminId, c.announcement ? 'announcement' : 'announcement.clear', '', c.announcement);
+        }
+        if (c.minVersion !== undefined && c.minVersion !== before.minVersion) {
+          await setConfig(deps.db, 'minVersion', c.minVersion);
+          await audit(deps, adminId, 'minVersion', '', c.minVersion);
+        }
+        if (c.inviteRequired !== undefined && c.inviteRequired !== before.inviteRequired) {
+          await setConfig(deps.db, 'inviteRequired', c.inviteRequired ? '1' : '0');
+          // everyone who already uses the app keeps using it
+          if (c.inviteRequired) await setConfig(deps.db, 'inviteSince', String(deps.now()));
+          await audit(deps, adminId, c.inviteRequired ? 'invites.on' : 'invites.off');
+        }
+        if (c.maintenance !== undefined) {
+          await setConfig(deps.db, 'maintenance', JSON.stringify(c.maintenance));
+          await audit(deps, adminId, c.maintenance ? 'maintenance' : 'maintenance.clear', '', c.maintenance ? `${c.maintenance.start}-${c.maintenance.end}` : '');
+        }
+        if (c.notifyTopic !== undefined && c.notifyTopic !== before.notifyTopic) {
+          await setConfig(deps.db, 'notifyTopic', c.notifyTopic);
+          await audit(deps, adminId, c.notifyTopic ? 'notify.on' : 'notify.off');
+        }
+        if (c.betaChannel !== undefined && c.betaChannel !== before.betaChannel) {
+          await setConfig(deps.db, 'betaChannel', c.betaChannel ? '1' : '0');
+          if (c.betaChannel) {
+            // freeze everyone else on the newest version already in use
+            await setConfig(deps.db, 'stablePc', await maxVersion(deps.db, 'pc'));
+            await setConfig(deps.db, 'stableIos', await maxVersion(deps.db, 'phone'));
+          }
+          await audit(deps, adminId, c.betaChannel ? 'beta.on' : 'beta.off');
+        }
+        return json({ config: await getConfig(deps.db) });
+      }
+
+      case 'POST /v1/admin/release': {
+        const v = await betaVersions(deps.db);
+        const cfg = await getConfig(deps.db);
+        const pc = v.pc && (!cfg.stablePc || compareVersions(v.pc, cfg.stablePc) > 0) ? v.pc : cfg.stablePc;
+        const ios = v.ios && (!cfg.stableIos || compareVersions(v.ios, cfg.stableIos) > 0) ? v.ios : cfg.stableIos;
+        await setConfig(deps.db, 'stablePc', pc);
+        await setConfig(deps.db, 'stableIos', ios);
+        await audit(deps, adminId, 'release', '', `PC ${pc || '-'} · iPhone ${ios || '-'}`);
         return json({ config: await getConfig(deps.db) });
       }
 
       case 'POST /v1/admin/install': {
         const p = InstallUpdateSchema.safeParse(body);
         if (!p.success) return fail(400, 'invalid request');
-        if (p.data.installId === adminId && (p.data.blocked || p.data.admin === false || p.data.remove)) return fail(400, 'you cannot block, demote or remove yourself');
-        if (p.data.remove) {
+        const d = p.data;
+        if (d.installId === adminId && (d.blocked || d.admin === false || d.remove)) return fail(400, 'you cannot block, demote or remove yourself');
+        const exists = await deps.db.first<{ id: string }>('SELECT id FROM installs WHERE id = ?', d.installId);
+        if (!exists) return fail(404, 'unknown install');
+        const name = await installName(deps.db, d.installId);
+        if (d.remove) {
           // removes the entry and its history; an app that is still in use simply checks in again
-          await deps.db.run('DELETE FROM admin_tokens WHERE install_id = ?', p.data.installId);
-          await deps.db.run('DELETE FROM daily_activity WHERE install_id = ?', p.data.installId);
-          await deps.db.run('DELETE FROM installs WHERE id = ?', p.data.installId);
+          await audit(deps, adminId, 'remove', '', name);
+          await deps.db.run('DELETE FROM admin_tokens WHERE install_id = ?', d.installId);
+          await deps.db.run('DELETE FROM daily_activity WHERE install_id = ?', d.installId);
+          await deps.db.run('DELETE FROM install_extra WHERE install_id = ?', d.installId);
+          await deps.db.run('DELETE FROM installs WHERE id = ?', d.installId);
           return json({ ok: true });
         }
-        if (p.data.blocked !== undefined) await deps.db.run('UPDATE installs SET blocked = ? WHERE id = ?', p.data.blocked ? 1 : 0, p.data.installId);
-        if (p.data.admin === false) {
-          await deps.db.run('UPDATE installs SET admin = 0 WHERE id = ?', p.data.installId);
-          await deps.db.run('DELETE FROM admin_tokens WHERE install_id = ?', p.data.installId);
+        if (d.blocked !== undefined) {
+          await deps.db.run('UPDATE installs SET blocked = ? WHERE id = ?', d.blocked ? 1 : 0, d.installId);
+          await audit(deps, adminId, d.blocked ? 'block' : 'unblock', d.installId);
         }
+        if (d.admin === false) {
+          await deps.db.run('UPDATE installs SET admin = 0 WHERE id = ?', d.installId);
+          await deps.db.run('DELETE FROM admin_tokens WHERE install_id = ?', d.installId);
+          await audit(deps, adminId, 'demote', d.installId);
+        }
+        if (d.approve || d.beta !== undefined || d.message !== undefined) await ensureExtra(deps.db, d.installId);
+        if (d.approve) {
+          await deps.db.run('UPDATE install_extra SET invited = 1 WHERE install_id = ?', d.installId);
+          await audit(deps, adminId, 'approve', d.installId);
+        }
+        if (d.beta !== undefined) {
+          await deps.db.run('UPDATE install_extra SET beta = ? WHERE install_id = ?', d.beta ? 1 : 0, d.installId);
+          await audit(deps, adminId, d.beta ? 'beta.add' : 'beta.remove', d.installId);
+        }
+        if (d.message !== undefined) {
+          await deps.db.run('UPDATE install_extra SET message = ?, message_at = ? WHERE install_id = ?', d.message, deps.now(), d.installId);
+          await audit(deps, adminId, d.message ? 'message' : 'message.clear', d.installId, d.message);
+        }
+        return json({ ok: true });
+      }
+
+      case 'POST /v1/admin/invite': {
+        const p = InviteCreateSchema.safeParse(body);
+        if (!p.success) return fail(400, 'invalid request');
+        const code = newInviteCode();
+        await deps.db.run('INSERT INTO invites (code, note, max_uses, uses, created_at) VALUES (?, ?, ?, 0, ?)', code, p.data.note ?? '', p.data.maxUses, deps.now());
+        await audit(deps, adminId, 'invite.create', '', `${code} ×${p.data.maxUses}${p.data.note ? ` (${p.data.note})` : ''}`);
+        return json({ code });
+      }
+
+      case 'POST /v1/admin/invite/delete': {
+        const p = InviteDeleteSchema.safeParse(body);
+        if (!p.success) return fail(400, 'invalid request');
+        await deps.db.run('DELETE FROM invites WHERE code = ?', p.data.code);
+        await audit(deps, adminId, 'invite.delete', '', p.data.code);
+        return json({ ok: true });
+      }
+
+      case 'POST /v1/admin/notify-test': {
+        const cfg = await getConfig(deps.db);
+        if (!cfg.notifyTopic || !deps.notify) return fail(400, 'notifications are not set up');
+        deps.notify(cfg.notifyTopic, 'FRISTY Remote', '✅ Notifications work');
         return json({ ok: true });
       }
 

@@ -1,11 +1,12 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Linking } from 'react-native';
 import { currentVersion, updateStore } from './updates';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
-import { Download, KeyRound, Lock } from 'lucide-react-native';
+import { Download, KeyRound, Lock, Ticket, Wrench, X } from 'lucide-react-native';
 import { font, radius, spacing } from '@fristy/ui';
 import { useApp } from '../theme';
-import { adminLogin, ownerStore } from './owner';
+import { adminLogin, ownerStore, redeemInvite } from './owner';
+import { readJson, writeJson } from '../store/secure';
 import { Button, ErrorText, Input, Logo, Muted } from '../components/ui';
 
 export function useOwner() {
@@ -61,20 +62,68 @@ export function AdminKey({ onSuccess, size = 16, label }: { onSuccess?: () => vo
   );
 }
 
+const fmtTime = (ts: number, lang: string) =>
+  new Date(ts).toLocaleString(lang === 'he' ? 'he-IL' : undefined, { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+
 export function LockScreen() {
-  const { c, t } = useApp();
+  const { c, t, prefs } = useApp();
+  const lang = prefs.language;
   const o = useOwner();
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const invite = o.reason === 'invite';
+  const maint = o.reason === 'maintenance' || (!o.locked && !!o.maintenance);
+  const tone = invite ? c.accent : maint ? c.warning : c.danger;
+  const Icon = invite ? Ticket : maint ? Wrench : Lock;
+  const title = invite ? t('owner.inviteTitle') : maint ? t('owner.maintTitle') : o.reason === 'blocked' ? t('owner.blocked') : t('owner.locked');
+  const body = invite
+    ? t('owner.inviteBody')
+    : maint && o.maintenance
+      ? `${t('owner.maintActive', { end: fmtTime(o.maintenance.end, lang) })}${o.message ? `\n${o.message}` : ''}`
+      : o.message || t('owner.lockedHint');
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
-      <View style={{ backgroundColor: c.danger + '22', padding: 24, borderRadius: 99 }}>
-        <Lock color={c.danger} size={48} />
+    <ScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }} keyboardShouldPersistTaps="handled">
+      <View style={{ backgroundColor: tone + '22', padding: 24, borderRadius: 99 }}>
+        <Icon color={tone} size={48} />
       </View>
-      <Text style={{ color: c.text, fontSize: font.title, fontWeight: '900', textAlign: 'center' }}>{o.reason === 'blocked' ? t('owner.blocked') : t('owner.locked')}</Text>
-      <Muted center>{o.message || t('owner.lockedHint')}</Muted>
-      <View style={{ position: 'absolute', bottom: 40 }}>
+      <Text style={{ color: c.text, fontSize: font.title, fontWeight: '900', textAlign: 'center' }}>{title}</Text>
+      <Muted center>{body}</Muted>
+      {invite && (
+        <View style={{ alignSelf: 'stretch', gap: spacing.md }}>
+          <Input
+            value={code}
+            onChangeText={(v) => setCode(v.toUpperCase())}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={16}
+            placeholder="ABCD2345"
+            style={{ textAlign: 'center', fontSize: 22, letterSpacing: 4, fontWeight: '800' }}
+          />
+          <ErrorText>{error}</ErrorText>
+          <Button
+            big
+            label={t('owner.inviteEnter')}
+            busy={busy}
+            disabled={code.trim().length < 4}
+            onPress={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await redeemInvite(code);
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+        </View>
+      )}
+      <View style={{ marginTop: spacing.xl }}>
         <AdminKey />
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -96,13 +145,46 @@ export function WelcomeName({ onDone }: { onDone: (name: string) => void }) {
   );
 }
 
+const K_SEEN = 'fristy.personalSeen.v1';
+
 export function OwnerBanners() {
-  const { c, t } = useApp();
+  const { c, t, prefs } = useApp();
+  const lang = prefs.language;
   const o = useOwner();
   const [hidden, setHidden] = useState<string | null>(null);
-  if (!o.announcement && !o.updateAvailable) return null;
+  const [seen, setSeen] = useState<number | null>(null);
+  useEffect(() => {
+    void readJson<number>(K_SEEN, 0).then(setSeen);
+  }, []);
+  const m = o.maintenance && o.maintenance.start > Date.now() ? o.maintenance : null;
+  const personal = seen !== null && o.personal && o.personal.at > seen ? o.personal : null;
+  if (!o.announcement && !o.updateAvailable && !m && !personal) return null;
   return (
     <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
+      {m && (
+        <View style={{ backgroundColor: c.warning + '22', borderRadius: radius.md, padding: spacing.md }}>
+          <Text style={{ color: c.warning, fontWeight: '700' }}>🔧 {t('owner.maintUpcoming', { start: fmtTime(m.start, lang), end: fmtTime(m.end, lang) })}</Text>
+          {!!m.message && <Text style={{ color: c.textMuted, marginTop: 4 }}>{m.message}</Text>}
+        </View>
+      )}
+      {personal && (
+        <View style={{ flexDirection: 'row', gap: spacing.sm, backgroundColor: c.accentSoft, borderColor: c.accent + '66', borderWidth: 1, borderRadius: radius.md, padding: spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: c.accent, fontWeight: '800', fontSize: font.tiny }}>✉️ {t('owner.messageFromOwner')}</Text>
+            <Text style={{ color: c.text, marginTop: 4 }}>{personal.text}</Text>
+          </View>
+          <Pressable
+            hitSlop={10}
+            accessibilityLabel={t('common.close')}
+            onPress={() => {
+              setSeen(personal.at);
+              void writeJson(K_SEEN, personal.at);
+            }}
+          >
+            <X color={c.textMuted} size={18} />
+          </Pressable>
+        </View>
+      )}
       {o.announcement && hidden !== o.announcement && (
         <Pressable onPress={() => setHidden(o.announcement)} style={{ backgroundColor: c.accentSoft, borderColor: c.accent + '66', borderWidth: 1, borderRadius: radius.md, padding: spacing.md }}>
           <Text style={{ color: c.text }}>📢 {o.announcement}</Text>

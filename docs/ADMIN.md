@@ -64,3 +64,29 @@ owner control for builds you distribute, not DRM.
 - PC: Settings → bottom right → small **🔑** → enter your code (exempts your PC from the lock).
 - Wrong codes are limited to 5 per hour per network and per install.
 - To change the code, update the `ADMIN_CODE` secret and re-run the deploy workflow.
+
+## Owner features (admin panel)
+
+The panel has four tabs – **Statistics**, **Users**, **⚙️ Controls** and **Admin activity log** – on the PC
+(side menu → Admin panel) and on the iPhone (Settings → Admin panel).
+
+| Feature | How it works |
+| --- | --- |
+| Statistics | Users per day (phones/PCs), new users, users by country (2-letter code only), app versions. |
+| Invite codes | Turn on "New users need an invite code". Everyone already using the app keeps working; new installs must enter a code (single- or multi-use) or be approved in the Users tab. |
+| Personal message | ✉️ next to a user – shown only on that user's app until they dismiss it. |
+| Scheduled maintenance | Pick a start time and duration. Apps show a warning beforehand and lock (except admins) during the window, on time even between check-ins. |
+| Beta channel | When on, only admins and users marked β get new builds. Press **Release to everyone** to let everyone else update to the version the beta testers are running. |
+| New-user notifications | Uses the free **ntfy** app: tap *Turn on*, then subscribe to the shown topic in ntfy. Only the device type and country are sent – never names. |
+| Activity log | Every admin action (lock, block, invite, release, failed admin codes…) with time and who did it. |
+
+### Updating the server
+
+After pulling a newer version, deploy it without re-entering the admin code:
+
+```
+cd apps/admin-server
+node setup.mjs --update
+```
+
+New database tables are created automatically on first use.

@@ -114,7 +114,8 @@ function Root() {
       </View>
     );
   }
-  if (ownerEnabled && owner.locked && !owner.admin) return <LockScreen />;
+  const inMaintenance = !!owner.maintenance && Date.now() >= owner.maintenance.start && Date.now() < owner.maintenance.end;
+  if (ownerEnabled && (owner.locked || inMaintenance) && !owner.admin) return <LockScreen />;
 
   const content =
     pairing || hosts.length === 0 ? (
